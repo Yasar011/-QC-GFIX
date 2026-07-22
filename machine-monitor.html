@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GarmentFix OS | Factory Monitor</title>
+    
+    <!-- Professional Industrial Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS (via CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js & PDF Generation (via CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    
+    <!-- FontAwesome (via CDN) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { 
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'] 
+                    },
+                    colors: {
+                        slate: { 850: '#151e2e', 900: '#0f172a', 950: '#020617' }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body { background-color: #020617; color: #cbd5e1; }
+        
+        /* UI Components */
+        .panel { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5); }
+        .digital-font { font-family: 'JetBrains Mono', monospace; font-weight: 800; letter-spacing: -0.05em; }
+        
+        /* Sidebar Nav */
+        .nav-item { cursor: pointer; transition: all 0.2s; border-left: 3px solid transparent; }
+        .nav-item.active { background: rgba(56, 189, 248, 0.1); color: #38bdf8; border-left-color: #38bdf8; font-weight: 600; }
+        .nav-item:hover:not(.active) { background: rgba(30, 41, 59, 0.8); color: white; }
+        
+        /* Views */
+        .view-section { display: none; animation: fadeIn 0.3s ease-out; }
+        .view-section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Massive Andon Glow */
+        .andon-glow-green { text-shadow: 0 0 30px rgba(16, 185, 129, 0.8); color: #10b981; }
+        .andon-glow-yellow { text-shadow: 0 0 30px rgba(245, 158, 11, 0.8); color: #f59e0b; }
+        .andon-glow-red { text-shadow: 0 0 30px rgba(239, 68, 68, 0.8); color: #ef4444; }
+        .andon-glow-blue { text-shadow: 0 0 30px rgba(56, 189, 248, 0.8); color: #38bdf8; }
+        .andon-glow-gray { text-shadow: 0 0 30px rgba(148, 163, 184, 0.5); color: #94a3b8; }
+        
+        /* Scrollbar & Tables */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        th { background-color: #151e2e; color: #94a3b8; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; padding: 12px 16px; text-align: left; border-bottom: 1px solid #1e293b; }
+        td { padding: 12px 16px; border-bottom: 1px solid #1e293b; font-size: 0.875rem; color: #e2e8f0; }
+        tr:hover td { background-color: #151e2e; }
+
+        /* Inputs & Buttons */
+        .form-input { background: #1e293b; border: 1px solid #334155; color: white; border-radius: 6px; padding: 8px 12px; width: 100%; outline: none; transition: border 0.2s; }
+        .form-input:focus { border-color: #38bdf8; }
+        .btn { padding: 10px 20px; border-radius: 8px; font-weight: bold; font-size: 0.875rem; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+        .btn:active { transform: scale(0.95); }
+        .btn-primary { background-color: #0ea5e9; color: white; box-shadow: 0 4px 15px rgba(14, 165, 233, 0.4); }
+        .btn-primary:hover { background-color: #0284c7; }
+        .btn-danger { background-color: #ef4444; color: white; box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4); }
+        .btn-danger:hover { background-color: #dc2626; }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden">
+
+    <!-- 1. SIDEBAR -->
+    <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between z-20 shrink-0 shadow-xl">
+        <div>
+            <div class="h-20 flex items-center px-6 border-b border-slate-800 bg-slate-950">
+                <i class="fa-solid fa-industry text-sky-400 text-xl mr-3"></i>
+                <h1 class="text-xl font-bold text-white tracking-tight">Garment<span class="text-sky-400">Fix</span> OS</h1>
+            </div>
+            
+            <div class="py-6 space-y-1">
+                <p class="px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Line Management</p>
+                <div class="nav-item active flex items-center px-6 py-3 text-slate-400" data-target="view-dashboard">
+                    <i class="fa-solid fa-house w-6 text-center"></i> <span class="font-medium text-sm ml-2">Main Dashboard</span>
+                </div>
+                <div class="nav-item flex items-center px-6 py-3 text-slate-400" data-target="view-live">
+                    <i class="fa-solid fa-gauge-high w-6 text-center"></i> <span class="font-medium text-sm ml-2">Live Monitor</span>
+                </div>
+                
+                <p class="px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-6 mb-3">Diagnostics & History</p>
+                <div class="nav-item flex items-center px-6 py-3 text-slate-400" data-target="view-reports">
+                    <i class="fa-solid fa-file-pdf w-6 text-center"></i> <span class="font-medium text-sm ml-2">Shift Reports</span>
+                </div>
+                <div class="nav-item flex items-center px-6 py-3 text-slate-400" data-target="view-logs">
+                    <i class="fa-solid fa-clipboard-list w-6 text-center"></i> <span class="font-medium text-sm ml-2">Raw Event Logs</span>
+                </div>
+                <div class="nav-item flex items-center px-6 py-3 text-slate-400" data-target="view-settings">
+                    <i class="fa-solid fa-sliders w-6 text-center"></i> <span class="font-medium text-sm ml-2">Settings</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-4 border-t border-slate-800 bg-slate-850">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-slate-300">
+                    <i class="fa-solid fa-user-tie"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-bold text-white">Line Engineer</p>
+                    <p id="db-status" class="text-[10px] font-bold text-amber-500 uppercase tracking-widest"><i class="fa-solid fa-satellite-dish animate-pulse"></i> Connecting...</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 2. MAIN WORKSPACE -->
+    <main class="flex-1 flex flex-col h-full bg-[#020617] overflow-y-auto">
+        
+        <!-- Header -->
+        <header class="h-20 px-8 flex items-center justify-between border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-10 shrink-0">
+            <div>
+                <h2 id="page-title" class="text-2xl font-bold text-white tracking-tight">Main Dashboard</h2>
+                <p class="text-xs text-slate-400 uppercase tracking-widest mt-1">Machine 1 • Single Needle Lock Stitch</p>
+            </div>
+            <div class="text-right">
+                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">System Clock</p>
+                <p id="sys-clock" class="text-xl digital-font text-white mt-1">00:00:00</p>
+            </div>
+        </header>
+
+        <div class="p-8 max-w-[1600px] mx-auto w-full">
+
+            <!-- ========================================== -->
+            <!-- VIEW 1: MAIN DASHBOARD (SHIFT OVERVIEW)    -->
+            <!-- ========================================== -->
+            <div id="view-dashboard" class="view-section active">
+                
+                <!-- Machine Averages -->
+                <h3 class="text-sm font-bold text-slate-300 uppercase tracking-widest mb-4 border-b border-slate-800 pb-2"><i class="fa-solid fa-calculator text-sky-500 mr-2"></i> Machine Averages (Current Shift)</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div class="panel p-6 border-t-4 border-t-sky-500 flex flex-col justify-center items-center text-center">
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Average RPM</p>
+                        <div class="flex items-baseline gap-1">
+                            <span id="avg-rpm" class="digital-font text-5xl text-white">0</span>
+                            <span class="text-sm font-bold text-slate-500">rev/min</span>
+                        </div>
+                    </div>
+                    <div class="panel p-6 border-t-4 border-t-emerald-500 flex flex-col justify-center items-center text-center">
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Average Vibration</p>
+                        <div class="flex items-baseline gap-1">
+                            <span id="avg-vib" class="digital-font text-5xl text-emerald-400">0.00</span>
+                            <span class="text-sm font-bold text-slate-500">g</span>
+                        </div>
+                    </div>
+                    <div class="panel p-6 border-t-4 border-t-orange-500 flex flex-col justify-center items-center text-center">
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Average Motor Temp</p>
+                        <div class="flex items-baseline gap-1">
+                            <span id="avg-temp" class="digital-font text-5xl text-orange-400">0.0</span>
+                            <span class="text-sm font-bold text-slate-500">°C</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Worker Analytics (Time Tracking) -->
+                <h3 class="text-sm font-bold text-slate-300 uppercase tracking-widest mb-4 border-b border-slate-800 pb-2"><i class="fa-solid fa-user-clock text-indigo-500 mr-2"></i> Worker & Time Analytics</h3>
+                
+                <div class="panel p-6 mb-6">
+                    <div class="flex justify-between items-end mb-2">
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Shift Progress & Breaks</span>
+                        <span class="text-xs font-mono text-slate-500" id="shift-time-labels">08:00 - 17:00</span>
+                    </div>
+                    <!-- Complex Progress Bar -->
+                    <div class="relative w-full h-4 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                        <div id="bar-shift-progress" class="absolute top-0 left-0 h-full bg-sky-500 opacity-30" style="width: 0%;"></div>
+                        <div id="break-overlays"></div>
+                    </div>
+                    <div class="flex justify-between mt-2">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase"><i class="fa-solid fa-square text-sky-500 opacity-30 mr-1"></i> Elapsed</span>
+                        <span class="text-[10px] font-bold text-slate-500 uppercase"><i class="fa-solid fa-square text-amber-500 mr-1"></i> Scheduled Break</span>
+                    </div>
+                </div>
+
+                <!-- 4-Column Grid for Accurate Time Tracking -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="panel p-5 flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-full bg-emerald-900/50 border border-emerald-500 flex items-center justify-center text-emerald-500 text-lg"><i class="fa-solid fa-person-running"></i></div>
+                        <div>
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Time</p>
+                            <p id="time-active" class="digital-font text-xl text-emerald-400 mt-1">00:00:00</p>
+                            <p class="text-[9px] text-slate-500 mt-1">Sewing Fabric</p>
+                        </div>
+                    </div>
+                    <div class="panel p-5 flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-full bg-amber-900/50 border border-amber-500 flex items-center justify-center text-amber-500 text-lg"><i class="fa-solid fa-pause"></i></div>
+                        <div>
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Idle Time</p>
+                            <p id="time-idle" class="digital-font text-xl text-amber-400 mt-1">00:00:00</p>
+                            <p class="text-[9px] text-slate-500 mt-1">Powered ON, No Load</p>
+                        </div>
+                    </div>
+                    <!-- Maintenance & Downtime Box -->
+                    <div class="panel p-5 flex items-center gap-4 border-l-2 border-blue-500">
+                        <div class="w-12 h-12 rounded-full bg-blue-900/50 border border-blue-500 flex items-center justify-center text-blue-400 text-lg"><i class="fa-solid fa-wrench"></i></div>
+                        <div>
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Downtime</p>
+                            <p id="time-maint" class="digital-font text-xl text-blue-400 mt-1">00:00:00</p>
+                            <p class="text-[9px] text-slate-500 mt-1">Maint. & Emergencies</p>
+                        </div>
+                    </div>
+                    <div class="panel p-5 flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center text-slate-400 text-lg"><i class="fa-solid fa-power-off"></i></div>
+                        <div>
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Machine Off</p>
+                            <p id="time-off" class="digital-font text-xl text-white mt-1">00:00:00</p>
+                            <p class="text-[9px] text-slate-500 mt-1">Disconnected / Sleep</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================== -->
+            <!-- VIEW 2: LIVE MONITOR (MECHANIC'S VIEW)     -->
+            <!-- ========================================== -->
+            <div id="view-live" class="view-section">
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <!-- Massive Andon Light -->
+                    <div class="panel p-8 flex flex-col justify-center items-center min-h-[300px] border border-slate-700">
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Live Machine State</p>
+                        <h1 id="massive-andon" class="text-5xl md:text-7xl font-black uppercase tracking-tight andon-glow-gray transition-all duration-300 text-center">
+                            WAITING
+                        </h1>
+                        <p id="andon-subtext" class="text-sm font-mono text-slate-500 mt-6">Establishing Connection...</p>
+                    </div>
+
+                    <!-- Live RPM Speedometer -->
+                    <div class="panel p-8 flex flex-col items-center justify-center min-h-[300px]">
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Current Speed (RPM)</p>
+                        <div class="relative w-64 h-48">
+                            <canvas id="rpmGaugeChart"></canvas>
+                            <!-- Center Text -->
+                            <div class="absolute top-[60%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
+                                <span id="gauge-rpm-val" class="digital-font text-4xl text-white block">0</span>
+                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">RPM</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scrolling Line Chart -->
+                <div class="panel p-6 h-[400px] flex flex-col">
+                    <div class="flex justify-between items-center mb-4 shrink-0 border-b border-slate-800 pb-2">
+                        <h3 class="text-sm font-bold text-slate-300 uppercase tracking-widest"><i class="fa-solid fa-chart-line text-emerald-500 mr-2"></i> Live Telemetry (Vib & Temp)</h3>
+                        <span class="text-[10px] bg-slate-800 text-slate-400 px-3 py-1 rounded font-mono">T-Minus 60s Window</span>
+                    </div>
+                    <div class="relative w-full flex-1 min-h-0">
+                        <canvas id="liveLineChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================== -->
+            <!-- VIEW 3: SHIFT REPORTS (NEW)                -->
+            <!-- ========================================== -->
+            <div id="view-reports" class="view-section">
+                <div class="panel flex flex-col h-[700px]">
+                    <div class="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900 shrink-0 rounded-t-xl">
+                        <div>
+                            <h3 class="text-lg font-bold text-white"><i class="fa-solid fa-box-archive text-blue-500 mr-2"></i> End of Shift Reports</h3>
+                            <p class="text-xs text-slate-400 mt-1">Permanently stored historical data for ISO compliance.</p>
+                        </div>
+                        
+                        <div class="flex gap-4">
+                            <button id="btn-export-pdf" class="btn btn-primary">
+                                <i class="fa-solid fa-file-pdf"></i> Download PDF
+                            </button>
+                            <button id="btn-end-shift" class="btn btn-danger">
+                                <i class="fa-solid fa-power-off"></i> End Shift & Save
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="flex-1 overflow-auto bg-[#0a0f18] p-2">
+                        <table class="w-full text-left border-collapse">
+                            <thead class="sticky top-0 bg-[#0a0f18] z-10 shadow-md">
+                                <tr>
+                                    <th>Date & Time</th>
+                                    <th>Active Time</th>
+                                    <th>Idle Time</th>
+                                    <th>Downtime</th>
+                                    <th>Avg RPM</th>
+                                    <th>Max Temp</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reports-table-body" class="divide-y divide-slate-800/50">
+                                <!-- JS Injects Shift Reports Here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================== -->
+            <!-- VIEW 4: EVENT LOGS (RAW HISTORY)           -->
+            <!-- ========================================== -->
+            <div id="view-logs" class="view-section">
+                <div class="panel flex flex-col h-[700px]">
+                    <div class="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900 shrink-0 rounded-t-xl">
+                        <h3 class="text-lg font-bold text-white"><i class="fa-solid fa-list-check text-sky-500 mr-2"></i> Raw System Event Logs</h3>
+                        
+                        <!-- Search/Filter -->
+                        <div class="relative w-64">
+                            <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                <i class="fa-solid fa-magnifying-glass text-slate-500"></i>
+                            </div>
+                            <input type="text" id="search-logs" class="form-input pl-10 bg-slate-950 text-sm" placeholder="Filter events...">
+                        </div>
+                    </div>
+                    
+                    <div class="flex-1 overflow-auto bg-[#0a0f18] p-2">
+                        <table class="w-full text-left border-collapse">
+                            <thead class="sticky top-0 bg-[#0a0f18] z-10 shadow-md">
+                                <tr>
+                                    <th class="w-48">Timestamp</th>
+                                    <th class="w-48">Event Category</th>
+                                    <th>Event Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="event-table-body" class="divide-y divide-slate-800/50">
+                                <!-- JS Injects Logs Here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================== -->
+            <!-- VIEW 5: SETTINGS & THRESHOLDS              -->
+            <!-- ========================================== -->
+            <div id="view-settings" class="view-section">
+                <div class="panel p-8 max-w-4xl mx-auto">
+                    <div class="flex justify-between items-center border-b border-slate-800 pb-6 mb-8">
+                        <div>
+                            <h2 class="text-2xl font-bold text-white tracking-tight">The Control Room</h2>
+                            <p class="text-sm text-slate-400 mt-1">Define the engineering rules and thresholds for the IoT system.</p>
+                        </div>
+                        <button id="btn-save-settings" class="btn btn-primary">
+                            <i class="fa-solid fa-floppy-disk"></i> Save to Cloud
+                        </button>
+                    </div>
+
+                    <div class="space-y-10">
+                        <!-- Maintenance Limits -->
+                        <div>
+                            <h3 class="text-sm font-bold text-sky-400 uppercase tracking-widest mb-4 flex items-center gap-2"><i class="fa-solid fa-wrench"></i> Maintenance Limits</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-900/50 p-5 rounded-lg border border-slate-800">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-400 mb-2 uppercase">Needle Life Limit (Stitches)</label>
+                                    <input type="number" id="set-needle" class="form-input digital-font" placeholder="e.g. 200000">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-400 mb-2 uppercase">Lubrication Schedule (Stitches)</label>
+                                    <input type="number" id="set-lube" class="form-input digital-font" placeholder="e.g. 25000000">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Shift Timings -->
+                        <div>
+                            <h3 class="text-sm font-bold text-sky-400 uppercase tracking-widest mb-4 flex items-center gap-2"><i class="fa-solid fa-clock"></i> Shift & Break Timings</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-900/50 p-5 rounded-lg border border-slate-800">
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-400 mb-2 uppercase">Shift Start</label>
+                                        <input type="time" id="set-shift-start" class="form-input digital-font">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-400 mb-2 uppercase">Shift End</label>
+                                        <input type="time" id="set-shift-end" class="form-input digital-font">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-amber-500 mb-2 uppercase">Lunch Start</label>
+                                        <input type="time" id="set-break-start" class="form-input digital-font">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-amber-500 mb-2 uppercase">Lunch End</label>
+                                        <input type="time" id="set-break-end" class="form-input digital-font">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Danger Parameters -->
+                        <div>
+                            <h3 class="text-sm font-bold text-red-400 uppercase tracking-widest mb-4 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> Danger Parameters</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-red-950/20 p-5 rounded-lg border border-red-900/30">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-400 mb-2 uppercase">Max Allowed Motor Temp (°C)</label>
+                                    <input type="number" id="set-max-temp" class="form-input digital-font border-red-900/50 focus:border-red-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-400 mb-2 uppercase">Max Allowed Vibration (g)</label>
+                                    <input type="number" id="set-max-vib" step="0.1" class="form-input digital-font border-red-900/50 focus:border-red-500">
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- FIREBASE SDK & APPLICATION LOGIC -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+        import { getDatabase, ref, onValue, set, get, push, query, limitToLast, onChildAdded } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+        // 1. FIREBASE CONFIGURATION (STRICT)
+        const firebaseConfig = {
+            apiKey: "AIzaSyAn5nAY-bczuJXlCbWazEz9UapTIcbdXHg",
+            authDomain: "fir-arduino-a8ce7.firebaseapp.com",
+            databaseURL: "https://fir-arduino-a8ce7-default-rtdb.firebaseio.com",
+            projectId: "fir-arduino-a8ce7",
+            storageBucket: "fir-arduino-a8ce7.firebasestorage.app",
+            messagingSenderId: "678375654106",
+            appId: "1:678375654106:web:9c91366032ecb5af04dbe3",
+            measurementId: "G-NPGMS5MXXH"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+
+        // --- CLOUD PERSISTENT STATE ---
+        // This stops data from resetting when the page refreshes!
+        let shiftState = {
+            activeSec: 0,
+            idleSec: 0,
+            maintSec: 0,
+            offSec: 0,
+            sumRpm: 0,
+            sumVib: 0,
+            sumTemp: 0,
+            dataCount: 0,
+            highestTemp: 0,
+            highestStitches: 0
+        };
+
+        let sysSettings = { 
+            needleLimit: 200000, lubeLimit: 25000000, 
+            shiftStart: "08:00", shiftEnd: "17:00", 
+            breakStart: "12:00", breakEnd: "13:00",
+            maxTemp: 75, maxVib: 5.0
+        };
+
+        let previousState = "WAITING";
+        let lastTimestamp = null;
+        let pdfReportsData = []; // Store reports for PDF export
+
+        // --- NAVIGATION LOGIC ---
+        const navItems = document.querySelectorAll('.nav-item');
+        const viewSections = document.querySelectorAll('.view-section');
+        const pageTitle = document.getElementById('page-title');
+        
+        const titles = {
+            'view-dashboard': 'Main Dashboard',
+            'view-live': 'Live Monitor',
+            'view-reports': 'Shift Reports',
+            'view-logs': 'Raw Event Logs',
+            'view-settings': 'Settings & Thresholds'
+        };
+
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                navItems.forEach(nav => nav.classList.remove('active'));
+                item.classList.add('active');
+                
+                const target = item.getAttribute('data-target');
+                pageTitle.innerText = titles[target];
+                
+                viewSections.forEach(sec => {
+                    sec.classList.remove('active');
+                    if (sec.id === target) sec.classList.add('active');
+                });
+
+                if (target === 'view-live') {
+                    liveLineChart.resize();
+                    rpmGaugeChart.resize();
+                }
+            });
+        });
+
+        // --- CHART.JS SETUP ---
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.font.family = 'JetBrains Mono, monospace';
+
+        const ctxLine = document.getElementById('liveLineChart').getContext('2d');
+        const liveLineChart = new Chart(ctxLine, {
+            type: 'line',
+            data: { labels: [], datasets: [
+                { label: 'Temp (°C)', data: [], borderColor: '#f97316', borderWidth: 2, tension: 0.3, pointRadius: 0, yAxisID: 'y' },
+                { label: 'Vib (g)', data: [], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 2, tension: 0.3, fill: true, pointRadius: 0, yAxisID: 'y1' }
+            ]},
+            options: {
+                responsive: true, maintainAspectRatio: false, interaction: { intersect: false },
+                scales: { x: { grid: { color: '#1e293b' } }, y: { position: 'left', grid: { color: '#1e293b' } }, y1: { position: 'right', grid: { drawOnChartArea: false } } }
+            }
+        });
+
+        const ctxGauge = document.getElementById('rpmGaugeChart').getContext('2d');
+        const rpmGaugeChart = new Chart(ctxGauge, {
+            type: 'doughnut',
+            data: { labels: ['RPM', 'Remaining'], datasets: [{ data: [0, 4000], backgroundColor: ['#38bdf8', '#1e293b'], borderWidth: 0 }] },
+            options: {
+                responsive: true, maintainAspectRatio: false, circumference: 180, rotation: 270, cutout: '80%',
+                plugins: { legend: { display: false }, tooltip: { enabled: false } }, animation: { duration: 200 }
+            }
+        });
+
+        // --- UTILITY FUNCTIONS ---
+        function formatTimeSpan(totalSeconds) {
+            const h = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+            const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+            const s = Math.floor(totalSeconds % 60).toString().padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        }
+
+        function timeToMinutes(timeStr) {
+            if (!timeStr) return 0;
+            const [h, m] = timeStr.split(':').map(Number);
+            return (h * 60) + m;
+        }
+
+        function updateShiftProgressBar() {
+            const startMins = timeToMinutes(sysSettings.shiftStart);
+            const endMins = timeToMinutes(sysSettings.shiftEnd);
+            const totalShiftMins = endMins - startMins;
+            if (totalShiftMins <= 0) return;
+
+            document.getElementById('shift-time-labels').innerText = `${sysSettings.shiftStart} - ${sysSettings.shiftEnd}`;
+
+            const breakStartMins = timeToMinutes(sysSettings.breakStart);
+            const breakEndMins = timeToMinutes(sysSettings.breakEnd);
+            const breakLeftPct = ((breakStartMins - startMins) / totalShiftMins) * 100;
+            const breakWidthPct = ((breakEndMins - breakStartMins) / totalShiftMins) * 100;
+
+            const overlays = document.getElementById('break-overlays');
+            overlays.innerHTML = '';
+            if (breakLeftPct >= 0 && breakWidthPct > 0) {
+                const block = document.createElement('div');
+                block.className = 'absolute top-0 h-full bg-amber-500';
+                block.style.left = `${Math.max(0, Math.min(100, breakLeftPct))}%`;
+                block.style.width = `${Math.min(100 - breakLeftPct, breakWidthPct)}%`;
+                overlays.appendChild(block);
+            }
+
+            const now = new Date();
+            const currentMins = (now.getHours() * 60) + now.getMinutes();
+            let elapsedPct = ((currentMins - startMins) / totalShiftMins) * 100;
+            document.getElementById('bar-shift-progress').style.width = `${Math.max(0, Math.min(100, elapsedPct))}%`;
+        }
+
+        function addEventLog(timestamp, category, details, colorClass) {
+            const tableBody = document.getElementById('event-table-body');
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="font-mono text-slate-400">${timestamp}</td>
+                <td><span class="${colorClass} font-bold text-xs uppercase tracking-widest border border-current px-2 py-1 rounded">${category}</span></td>
+                <td class="text-slate-300">${details}</td>
+            `;
+            tableBody.insertBefore(tr, tableBody.firstChild);
+            if (tableBody.children.length > 100) tableBody.removeChild(tableBody.lastChild);
+        }
+
+        setInterval(() => {
+            document.getElementById('sys-clock').innerText = new Date().toLocaleTimeString('en-US', { hour12: false });
+            updateShiftProgressBar();
+        }, 1000);
+
+        // --- FIREBASE INITIALIZATION & SYNC ---
+        const initFirebase = async () => {
+            try {
+                await signInAnonymously(auth);
+                document.getElementById('db-status').innerHTML = '<i class="fa-solid fa-satellite-dish"></i> SYNC OK';
+                document.getElementById('db-status').className = 'text-[10px] font-bold text-emerald-500 uppercase tracking-widest';
+
+                const shiftStateRef = ref(db, '/machine_1/shift_state');
+                const settingsRef = ref(db, '/machine_1/settings');
+                const reportsRef = ref(db, '/machine_1/shift_reports');
+
+                // 1. Fetch Persistent Shift State on Load
+                const snapState = await get(shiftStateRef);
+                if (snapState.exists()) {
+                    shiftState = { ...shiftState, ...snapState.val() };
+                }
+
+                // 2. Fetch & Listen to Settings
+                onValue(settingsRef, (snap) => {
+                    if (snap.exists()) {
+                        sysSettings = { ...sysSettings, ...snap.val() };
+                        document.getElementById('set-needle').value = sysSettings.needleLimit;
+                        document.getElementById('set-lube').value = sysSettings.lubeLimit;
+                        document.getElementById('set-shift-start').value = sysSettings.shiftStart;
+                        document.getElementById('set-shift-end').value = sysSettings.shiftEnd;
+                        document.getElementById('set-break-start').value = sysSettings.breakStart;
+                        document.getElementById('set-break-end').value = sysSettings.breakEnd;
+                        document.getElementById('set-max-temp').value = sysSettings.maxTemp;
+                        document.getElementById('set-max-vib').value = sysSettings.maxVib;
+                        updateShiftProgressBar();
+                    } else {
+                        set(settingsRef, sysSettings);
+                    }
+                });
+
+                // 3. Listen to Historical Shift Reports
+                onChildAdded(query(reportsRef, limitToLast(50)), (snapshot) => {
+                    const rep = snapshot.val();
+                    if (!rep) return;
+                    
+                    const timeLabel = new Date(rep.timestamp).toLocaleString('en-US');
+                    
+                    // Add to PDF export array
+                    pdfReportsData.unshift([
+                        timeLabel, 
+                        formatTimeSpan(rep.activeSec), 
+                        formatTimeSpan(rep.idleSec), 
+                        formatTimeSpan(rep.maintSec), 
+                        rep.avgRpm, 
+                        `${rep.maxTemp}°C`
+                    ]);
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="font-mono text-slate-400">${timeLabel}</td>
+                        <td class="text-emerald-400 font-bold">${formatTimeSpan(rep.activeSec)}</td>
+                        <td class="text-amber-400 font-bold">${formatTimeSpan(rep.idleSec)}</td>
+                        <td class="text-blue-400 font-bold">${formatTimeSpan(rep.maintSec)}</td>
+                        <td class="text-white">${rep.avgRpm}</td>
+                        <td class="text-orange-400">${rep.maxTemp}°C</td>
+                    `;
+                    const tBody = document.getElementById('reports-table-body');
+                    tBody.insertBefore(tr, tBody.firstChild);
+                });
+
+                // 4. Live Sensor Stream & Time Aggregation
+                const historyRef = query(ref(db, '/machine_1/sensor_history'), limitToLast(30));
+                
+                onChildAdded(historyRef, (snapshot) => {
+                    const data = snapshot.val();
+                    if (!data) return;
+
+                    const rpm = Math.round(data.rpm || 0);
+                    const vib = parseFloat(data.vibration_mpu_raw || data.vibration || 0);
+                    const temp = parseFloat(data.temperature || data.motorTemp || 0);
+                    let state = data.state;
+                    
+                    // Intelligent State Derivation
+                    if (!state) {
+                        const isPowerOn = (data.can_power_status === true) || (data.motor_current > 0.1);
+                        const isSewing = (rpm > 10) || (data.motor_current > 0.5);
+                        if (data.emergency) state = "EMERGENCY";
+                        else if (data.needle_req) state = "NEEDLE_CHG";
+                        else if (isPowerOn) state = isSewing ? "RUNNING" : "IDLE";
+                        else state = "OFF / SLEEP";
+                    }
+
+                    // Time Parsing
+                    let currentTs = Date.now();
+                    let timeStr = "--:--:--";
+                    if (data.timestamp) {
+                        if (typeof data.timestamp === 'number') {
+                            currentTs = data.timestamp * 1000;
+                            timeStr = new Date(currentTs).toLocaleTimeString('en-US', { hour12: false });
+                        } else {
+                            timeStr = data.timestamp.includes(' ') ? data.timestamp.split(' ')[1] : data.timestamp;
+                        }
+                    }
+
+                    // --- CLOUD PERSISTENT TIME TRACKING ---
+                    if (!state.includes("OFF")) {
+                        shiftState.sumRpm += rpm; shiftState.sumVib += vib; shiftState.sumTemp += temp; shiftState.dataCount++;
+                    }
+
+                    if (temp > shiftState.highestTemp) shiftState.highestTemp = temp;
+                    if (data.stitches && data.stitches > shiftState.highestStitches) shiftState.highestStitches = data.stitches;
+
+                    if (lastTimestamp) {
+                        let diffSec = (currentTs - lastTimestamp) / 1000;
+                        if (diffSec > 60 || diffSec < 0) diffSec = 2;
+
+                        if (state.includes("RUNNING")) shiftState.activeSec += diffSec;
+                        else if (state.includes("IDLE")) shiftState.idleSec += diffSec;
+                        else if (state.includes("EMERGENCY") || state.includes("NEEDLE")) shiftState.maintSec += diffSec;
+                        else shiftState.offSec += diffSec;
+                    }
+                    lastTimestamp = currentTs;
+
+                    // Sync the aggregated time data back to Firebase so it never resets on refresh
+                    set(shiftStateRef, shiftState);
+
+                    // --- UPDATE UI FROM CLOUD STATE ---
+                    document.getElementById('time-active').innerText = formatTimeSpan(shiftState.activeSec);
+                    document.getElementById('time-idle').innerText = formatTimeSpan(shiftState.idleSec);
+                    document.getElementById('time-maint').innerText = formatTimeSpan(shiftState.maintSec);
+                    document.getElementById('time-off').innerText = formatTimeSpan(shiftState.offSec);
+
+                    if (shiftState.dataCount > 0) {
+                        document.getElementById('avg-rpm').innerText = Math.round(shiftState.sumRpm / shiftState.dataCount);
+                        document.getElementById('avg-vib').innerText = (shiftState.sumVib / shiftState.dataCount).toFixed(2);
+                        document.getElementById('avg-temp').innerText = (shiftState.sumTemp / shiftState.dataCount).toFixed(1);
+                    }
+
+                    // --- UPDATE MASSIVE ANDON ---
+                    const andonEl = document.getElementById('massive-andon');
+                    const andonSub = document.getElementById('andon-subtext');
+                    
+                    if (state.includes("EMERGENCY")) {
+                        andonEl.className = "text-5xl md:text-7xl font-black uppercase tracking-tight andon-glow-red transition-all duration-300 text-center animate-pulse";
+                        andonEl.innerText = "EMERGENCY STOP"; andonSub.innerText = "Kill Switch Engaged";
+                    } else if (state.includes("NEEDLE")) {
+                        andonEl.className = "text-5xl md:text-7xl font-black uppercase tracking-tight andon-glow-blue transition-all duration-300 text-center animate-pulse";
+                        andonEl.innerText = "NEEDLE CHANGE"; andonSub.innerText = "Operator Requested Maintenance";
+                    } else if (state.includes("RUNNING")) {
+                        andonEl.className = "text-5xl md:text-7xl font-black uppercase tracking-tight andon-glow-green transition-all duration-300 text-center";
+                        andonEl.innerText = "RUNNING"; andonSub.innerText = "Machine Operating Nominally";
+                    } else if (state.includes("IDLE")) {
+                        andonEl.className = "text-5xl md:text-7xl font-black uppercase tracking-tight andon-glow-yellow transition-all duration-300 text-center";
+                        andonEl.innerText = "IDLE"; andonSub.innerText = "Powered On, Waiting for Fabric";
+                    } else {
+                        andonEl.className = "text-5xl md:text-7xl font-black uppercase tracking-tight andon-glow-gray transition-all duration-300 text-center";
+                        andonEl.innerText = "POWER OFF"; andonSub.innerText = "Machine Disconnected";
+                    }
+
+                    document.getElementById('gauge-rpm-val').innerText = rpm;
+                    rpmGaugeChart.data.datasets[0].data = [rpm, Math.max(0, 4000 - rpm)];
+                    rpmGaugeChart.update();
+
+                    liveLineChart.data.labels.push(timeStr);
+                    liveLineChart.data.datasets[0].data.push(state.includes("OFF") ? 0 : temp);
+                    liveLineChart.data.datasets[1].data.push(state.includes("OFF") ? 0 : vib);
+                    if (liveLineChart.data.labels.length > 40) {
+                        liveLineChart.data.labels.shift();
+                        liveLineChart.data.datasets.forEach(ds => ds.data.shift());
+                    }
+                    liveLineChart.update('none');
+
+                    // --- EVENT LOG TRIGGER ---
+                    if (state !== previousState && previousState !== "WAITING") {
+                        let color = "text-slate-400";
+                        if(state.includes("RUNNING")) color = "text-emerald-400";
+                        else if(state.includes("IDLE")) color = "text-amber-400";
+                        else if(state.includes("NEEDLE")) color = "text-blue-400";
+                        else if(state.includes("EMERGENCY")) color = "text-red-400";
+                        
+                        if (state.includes("OFF") || previousState.includes("OFF") || state.includes("EMERGENCY") || state.includes("NEEDLE")) {
+                            addEventLog(timeStr, 'STATE CHANGE', `Machine shifted to ${state}`, color);
+                        }
+                    }
+
+                    if (temp >= sysSettings.maxTemp) addEventLog(timeStr, 'OVERHEAT WARNING', `Motor Temp (${temp.toFixed(1)}°C) exceeded safe limit.`, 'text-orange-500');
+                    if (vib >= sysSettings.maxVib) addEventLog(timeStr, 'VIBRATION WARNING', `Vibration (${vib.toFixed(2)}g) exceeded safe limit.`, 'text-red-400');
+
+                    previousState = state;
+                });
+
+                // --- BUTTON ACTIONS ---
+
+                // Save Settings
+                document.getElementById('btn-save-settings').addEventListener('click', () => {
+                    const newSettings = {
+                        needleLimit: parseInt(document.getElementById('set-needle').value) || 200000,
+                        lubeLimit: parseInt(document.getElementById('set-lube').value) || 25000000,
+                        shiftStart: document.getElementById('set-shift-start').value,
+                        shiftEnd: document.getElementById('set-shift-end').value,
+                        breakStart: document.getElementById('set-break-start').value,
+                        breakEnd: document.getElementById('set-break-end').value,
+                        maxTemp: parseFloat(document.getElementById('set-max-temp').value) || 75,
+                        maxVib: parseFloat(document.getElementById('set-max-vib').value) || 5.0
+                    };
+                    set(settingsRef, newSettings).then(() => alert("Settings updated in Firebase!"));
+                });
+
+                // End Shift & Generate Report
+                document.getElementById('btn-end-shift').addEventListener('click', async () => {
+                    if(!confirm("Are you sure you want to END the current shift? This will save the report and reset live dashboard counters.")) return;
+                    
+                    let avgRpm = shiftState.dataCount > 0 ? Math.round(shiftState.sumRpm / shiftState.dataCount) : 0;
+
+                    const finalReport = {
+                        timestamp: Date.now(),
+                        activeSec: shiftState.activeSec,
+                        idleSec: shiftState.idleSec,
+                        maintSec: shiftState.maintSec,
+                        offSec: shiftState.offSec,
+                        avgRpm: avgRpm,
+                        maxTemp: shiftState.highestTemp.toFixed(1),
+                        totalStitches: shiftState.highestStitches
+                    };
+
+                    // Push to historical logs
+                    await push(reportsRef, finalReport);
+                    
+                    // Reset live shift state (Wait until push completes to avoid race conditions)
+                    shiftState = { activeSec: 0, idleSec: 0, maintSec: 0, offSec: 0, sumRpm: 0, sumVib: 0, sumTemp: 0, dataCount: 0, highestTemp: 0, highestStitches: shiftState.highestStitches };
+                    await set(shiftStateRef, shiftState);
+                    
+                    alert("Shift Report successfully generated and saved to Cloud!");
+                });
+
+                // Export PDF Log
+                document.getElementById('btn-export-pdf').addEventListener('click', () => {
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF('p', 'mm', 'a4');
+
+                    doc.setFillColor(15, 23, 42); 
+                    doc.rect(0, 0, 210, 40, 'F');
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFontSize(22);
+                    doc.text("GarmentFix Official Shift Report", 14, 20);
+                    doc.setTextColor(56, 189, 248);
+                    doc.setFontSize(10);
+                    doc.text("Machine 1 • Historical Shift Logs", 14, 28);
+                    
+                    doc.setTextColor(40, 40, 40);
+                    doc.setFontSize(12);
+                    doc.text(`Generated On: ${new Date().toLocaleString()}`, 14, 50);
+
+                    doc.autoTable({
+                        startY: 60,
+                        head: [['Date & Time', 'Active Time', 'Idle Time', 'Downtime', 'Avg RPM', 'Max Temp']],
+                        body: pdfReportsData,
+                        theme: 'striped',
+                        headStyles: { fillColor: [15, 23, 42] },
+                        styles: { fontSize: 9 }
+                    });
+
+                    doc.save(`Shift_Reports_${new Date().getTime()}.pdf`);
+                });
+
+            } catch (error) {
+                console.error("Firebase Error:", error);
+                document.getElementById('db-status').innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> AUTH FAILED';
+                document.getElementById('db-status').className = 'text-[10px] font-bold text-red-500 uppercase tracking-widest';
+            }
+        };
+
+        initFirebase();
+
+        // Search Logs filter
+        document.getElementById('search-logs').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const rows = document.querySelectorAll('#event-table-body tr');
+            rows.forEach(row => row.style.display = row.innerText.toLowerCase().includes(term) ? '' : 'none');
+        });
+    </script>
+</body>
+</html>

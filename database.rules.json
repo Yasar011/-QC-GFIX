@@ -1,0 +1,59 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "machine_1": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "AAAQMS": {
+      "users": {
+        ".read": "auth != null && root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'",
+        "$uid": {
+          ".read": "auth != null && (auth.uid === $uid || root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin')",
+          ".write": "auth != null && (root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin' || (auth.uid === $uid && !data.exists() && (!root.child('AAAQMS/users').exists() || newData.child('role').val() === 'worker')))"
+        }
+      },
+
+      "hourlyEntries": {
+        ".read": "auth != null",
+        "$date": {
+          "$line": {
+            "$hour": {
+              "$stage": {
+                ".write": "auth != null && (root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin' || newData.exists())"
+              }
+            }
+          }
+        }
+      },
+
+      "notifications": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
+
+      "logs": {
+        ".read": "auth != null && root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'",
+        ".write": "auth != null && newData.exists()"
+      },
+
+      "productionLines":     { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "modules":             { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "buyers":              { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "styles":              { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "tasks":               { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "inspectionTemplates": { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "defects":             { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "shifts":              { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "teams":               { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "settings":            { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "appConfig":           { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "reports":             { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "analytics":           { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
+      "dashboardCache":      { ".read": "auth != null", ".write": "auth != null" }
+    }
+  }
+}
