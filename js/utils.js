@@ -30,8 +30,10 @@ export function calcMetrics(checkedQty, defectQty, defectCounts = {}) {
     defectQty = Math.max(0, Number(defectQty) || 0);
     if (defectQty > checkedQty) defectQty = checkedQty;
 
-    const totalDefects = Object.values(defectCounts)
-        .reduce((s, n) => s + (Math.max(0, Number(n) || 0)), 0);
+    const hasBreakdown = defectCounts && Object.keys(defectCounts).length > 0;
+    const totalDefects = hasBreakdown
+        ? Object.values(defectCounts).reduce((s, n) => s + (Math.max(0, Number(n) || 0)), 0)
+        : defectQty;
 
     const passedQty = checkedQty - defectQty;
     const rejectedQty = defectQty;

@@ -68,7 +68,7 @@ export async function login(username, password) {
 
     const profile = {
         id: u.id, name: u.name, username: u.username, role: u.role,
-        assignedLine: u.assignedLine || null, assignedModule: u.assignedModule || null,
+        assignedLine: u.assignedLine || null,
         assignedTeam: u.assignedTeam || null
     };
     setSession(profile);
@@ -100,7 +100,6 @@ export async function createUserAccount(data) {
         role: data.role || "worker",
         active: data.active !== false,
         assignedLine: data.assignedLine || null,
-        assignedModule: data.assignedModule || null,
         assignedTeam: data.assignedTeam || null,
         passwordHash, salt
     });

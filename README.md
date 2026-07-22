@@ -24,27 +24,32 @@ Admin account via a one-time setup screen.
 
 **Worker (QC Inspector)**
 - Login, then a single simple screen showing today's task (buyer, style, task
-  ID, line, module, shift, team, current hour).
-- One big **START HOURLY ENTRY** button.
-- Enters only **Checked Quantity** and **Defect Quantity** (plus per-defect
-  counts). The system auto-calculates Total Defects, Passed, Rejected,
-  DHU %, Pass % and Reject % — the worker never calculates anything.
+  ID, line, shift, team, current hour).
+- One big **START HOURLY ENTRY** button, which opens **one form for the whole
+  hour**: every inspection stage the task requires (Inline, End Line, Third
+  Party, ...) is entered together in the same screen.
+- For each stage, the worker enters only **Checked Quantity** and **Defect
+  Quantity** (with an optional per-defect breakdown). The system
+  auto-calculates Total Defects, Passed, Rejected, DHU %, Pass % and Reject %
+  — the worker never calculates anything.
+- **Single submit** saves every stage for that hour at once. Reopening and
+  resubmitting an already-completed hour **overwrites** it — there's never
+  stale or duplicate data for the same hour.
 - Sees **only** the inspection stages and defects assigned to the current task.
-- Views their own recent entries.
+- Views their own recent entries; clicking an hour reopens it for editing.
 
 **Admin**
 - Live dashboard: workers online, active lines/tasks, today's DHU, pass/reject,
   pending vs completed entries, DHU trend, top defects, line/team/shift
   performance, recent submissions — updates in real time.
-- Full management (CRUD) of users, production lines, modules, buyers, styles,
-  defects, inspection templates, tasks, teams.
-- Dynamic **task system**: each task defines its own stages and defect list
-  (directly or via an inspection template).
+- Full management (CRUD) of users, production lines, buyers, styles, defects,
+  tasks, teams.
+- Dynamic **task system**: each task directly defines its own inspection
+  stages and defect list.
 - Shift & team rotation engine (2 shifts, 2 teams, configurable cadence, manual
   override).
 - Reports & analytics with a sticky **filter bar** (Today/Week/Month/Custom +
-  line, module, buyer, style, task, stage, defect, team, search) and **Reset
-  All**.
+  line, buyer, style, task, stage, defect, team, search) and **Reset All**.
 - Export to **CSV, Excel (.xlsx), PDF** and **Print**.
 - Alerts (e.g. high DHU) and an **audit log** of key actions.
 - Light / dark mode, toast notifications, confirm dialogs, loading indicators.
@@ -60,7 +65,7 @@ css/styles.css        ERP design system (light + dark)
 js/
   firebase-config.js  Firebase init + qmsRef() — enforces the AAAQMS/ root
   db.js               Data service (all reads/writes scoped to AAAQMS/)
-  auth.js             Auth, role resolution, secondary-app user creation
+  auth.js             Username/password login (DB-stored, salted hash), sessions
   utils.js            Calculations (DHU/pass/reject), toast, modal, CSV…
   shift.js            Shift & team rotation engine
   charts.js           Chart.js theme-aware helpers
@@ -76,23 +81,24 @@ seed.js               Optional sample-data seeder
 
 ```
 AAAQMS/
-├── users/{uid}                 name, email, role, assignedLine/Module/Team, active
-├── productionLines/{id}        name, code, active
-├── modules/{id}                name, lineId, active
-├── buyers/{id}                 name, code, active
-├── styles/{id}                 name, code, buyerId
-├── defects/{id}                name, category
-├── inspectionTemplates/{id}    name, stages[], defectIds[]
-├── tasks/{id}                  taskCode, buyerId, styleId, lineId, moduleId,
-│                               templateId, stages[], defectIds[], active
-├── teams/{id}                  name
-├── settings                    rotation{...}, dhuAlert, workHours, company
+├── users/{id}                   name, username, passwordHash, salt, role,
+│                                 assignedLine/Team, active
+├── productionLines/{id}         name, code, active
+├── buyers/{id}                  name, code, active
+├── styles/{id}                  name, code, buyerId
+├── defects/{id}                 name, category
+├── tasks/{id}                   taskCode, buyerId, styleId, lineId,
+│                                 stages[], defectIds[], active
+├── teams/{id}                   name
+├── settings                     rotation{...}, dhuAlert, workHours, company
 ├── hourlyEntries/{YYYY-MM-DD}/{lineId}/hour{N}/{stage}
 │        → checkedQty, defectQty, defects{}, totalDefects, passedQty,
 │          rejectedQty, dhu, passPct, rejectPct, worker/task/shift/team, savedAt
 │        + calculations (per-hour rollup)
-├── notifications/{id}          type, severity, text, ts, read
-└── logs/{id}                   action, detail, actor, ts   (audit trail)
+│        Note: the whole hour{N} node is written together and REPLACED on
+│        every submit — editing an hour overwrites it, never appends.
+├── notifications/{id}           type, severity, text, ts, read
+└── logs/{id}                    action, detail, actor, ts   (audit trail)
 ```
 
 ## Calculations
@@ -138,7 +144,7 @@ Reject %     = rejectedQty / checkedQty × 100
 4. **First admin** — open the app with no users in the database yet, and
    you'll see a **"Create the first Admin"** screen (name, username,
    password). After that, use the Admin **Users** screen to create workers
-   and assign them to lines/modules/teams — just name, username and password,
+   and assign them to lines/teams — just name, username and password,
    no email needed.
 
 5. **Run locally**

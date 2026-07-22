@@ -50,35 +50,31 @@ export async function setUser(uidKey, data) {
 
 // ---- Hourly entries -------------------------------------------------
 // Path: hourlyEntries/{date}/{lineId}/{hour}/{stage}
-export function entryPath(date, lineId, hour, stage) {
-    return `hourlyEntries/${date}/${lineId}/hour${hour}/${stage}`;
+//
+// A whole hour is submitted together (one row per required stage). Saving
+// REPLACES the entire hour node, so re-submitting an already-completed
+// hour overwrites the previous data for that hour rather than layering
+// on top of it — there is never stale/duplicate data for the same hour.
+export async function getHourEntry(date, lineId, hour) {
+    return readOnce(`hourlyEntries/${date}/${lineId}/hour${hour}`);
 }
 
-export async function saveEntry(date, lineId, hour, stage, payload) {
-    await set(qmsRef(entryPath(date, lineId, hour, stage)), {
-        ...payload, savedAt: Date.now()
-    });
-    // Maintain a lightweight calculations rollup for the hour.
-    await touchHourCalc(date, lineId, hour);
-}
-
-async function touchHourCalc(date, lineId, hour) {
-    const stages = await readOnce(`hourlyEntries/${date}/${lineId}/hour${hour}`);
-    if (!stages) return;
+export async function saveHourEntries(date, lineId, hour, stagePayloads) {
+    const now = Date.now();
+    const node = {};
     let checked = 0, defects = 0, rejected = 0;
-    Object.entries(stages).forEach(([k, v]) => {
-        if (k === "calculations") return;
-        checked += Number(v.checkedQty) || 0;
-        defects += Number(v.totalDefects) || 0;
-        rejected += Number(v.rejectedQty) || 0;
-    });
-    await set(qmsRef(`hourlyEntries/${date}/${lineId}/hour${hour}/calculations`), {
-        checkedQty: checked,
-        totalDefects: defects,
-        rejectedQty: rejected,
+    for (const [stage, payload] of Object.entries(stagePayloads)) {
+        node[stage] = { ...payload, savedAt: now };
+        checked += Number(payload.checkedQty) || 0;
+        defects += Number(payload.totalDefects) || 0;
+        rejected += Number(payload.rejectedQty) || 0;
+    }
+    node.calculations = {
+        checkedQty: checked, totalDefects: defects, rejectedQty: rejected,
         dhu: checked ? Math.round((defects / checked) * 10000) / 100 : 0,
-        updatedAt: Date.now()
-    });
+        updatedAt: now
+    };
+    await set(qmsRef(`hourlyEntries/${date}/${lineId}/hour${hour}`), node);
 }
 
 export async function getDayEntries(date) {

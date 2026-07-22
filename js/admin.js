@@ -32,15 +32,6 @@ const COLLECTIONS = {
             { k: "active", label: "Active", type: "check", def: true }
         ]
     },
-    modules: {
-        title: "Modules", singular: "Module",
-        cols: [["name", "Name"], ["lineId", "Line", "productionLines"], ["active", "Status"]],
-        fields: [
-            { k: "name", label: "Module Name", req: true },
-            { k: "lineId", label: "Production Line", type: "ref", ref: "productionLines" },
-            { k: "active", label: "Active", type: "check", def: true }
-        ]
-    },
     buyers: {
         title: "Buyers", singular: "Buyer",
         cols: [["name", "Name"], ["code", "Code"], ["active", "Status"]],
@@ -68,15 +59,6 @@ const COLLECTIONS = {
               opts: ["Stitching", "Measurement", "Fabric", "Finishing", "Cutting", "Print/Embroidery", "Packing", "Other"] }
         ]
     },
-    inspectionTemplates: {
-        title: "Inspection Templates", singular: "Template",
-        cols: [["name", "Template"], ["stages", "Stages"], ["defectIds", "Defects"]],
-        fields: [
-            { k: "name", label: "Template Name", req: true },
-            { k: "stages", label: "Inspection Stages", type: "stages" },
-            { k: "defectIds", label: "Defects", type: "defects" }
-        ]
-    },
     tasks: {
         title: "Tasks", singular: "Task",
         cols: [["taskCode", "Task ID"], ["buyerId", "Buyer", "buyers"], ["styleId", "Style", "styles"],
@@ -86,10 +68,8 @@ const COLLECTIONS = {
             { k: "buyerId", label: "Buyer", type: "ref", ref: "buyers" },
             { k: "styleId", label: "Style", type: "ref", ref: "styles" },
             { k: "lineId", label: "Production Line", type: "ref", ref: "productionLines" },
-            { k: "moduleId", label: "Module", type: "ref", ref: "modules" },
-            { k: "templateId", label: "Inspection Template (optional)", type: "ref", ref: "inspectionTemplates" },
-            { k: "stages", label: "Override Stages (optional)", type: "stages" },
-            { k: "defectIds", label: "Override Defects (optional)", type: "defects" },
+            { k: "stages", label: "Inspection Stages", type: "stages" },
+            { k: "defectIds", label: "Defects", type: "defects" },
             { k: "active", label: "Active", type: "check", def: true }
         ]
     },
@@ -108,11 +88,9 @@ const NAV = [
     { g: "Configuration" },
     { id: "users", ic: "◍", label: "Users" },
     { id: "productionLines", ic: "▥", label: "Production Lines" },
-    { id: "modules", ic: "◫", label: "Modules" },
     { id: "buyers", ic: "◆", label: "Buyers" },
     { id: "styles", ic: "❖", label: "Styles" },
     { id: "defects", ic: "⚠", label: "Defects" },
-    { id: "inspectionTemplates", ic: "▣", label: "Templates" },
     { id: "tasks", ic: "☑", label: "Tasks" },
     { id: "rotation", ic: "⟳", label: "Shifts & Teams" },
     { g: "System" },
@@ -132,8 +110,8 @@ export async function mountAdmin(root, prof) {
 }
 
 async function loadAll() {
-    const keys = ["users", "productionLines", "modules", "buyers", "styles",
-                  "defects", "inspectionTemplates", "tasks", "teams",
+    const keys = ["users", "productionLines", "buyers", "styles",
+                  "defects", "tasks", "teams",
                   "notifications", "logs", "settings"];
     const vals = await Promise.all(keys.map((k) => readOnce(k)));
     keys.forEach((k, i) => store[k] = vals[i] || {});
@@ -315,7 +293,7 @@ function expectedSlots(activeTasks) {
     const start = new Date(now); start.setHours(sh, sm, 0, 0);
     const hoursIn = Math.min(8, Math.max(0, Math.floor((now - start) / 3600000)));
     return activeTasks.reduce((sum, t) => {
-        const stages = (t.stages?.length ? t.stages : store.inspectionTemplates[t.templateId]?.stages) || [];
+        const stages = t.stages || [];
         return sum + hoursIn * stages.length;
     }, 0);
 }
@@ -374,7 +352,6 @@ function renderReports(v) {
         </div>
         <div class="f-grid">
           <div><label>Line</label>${sel("lineId", "productionLines")}</div>
-          <div><label>Module</label>${sel("moduleId", "modules")}</div>
           <div><label>Buyer</label>${sel("buyerId", "buyers")}</div>
           <div><label>Style</label>${sel("styleId", "styles")}</div>
           <div><label>Task</label>${sel("taskId", "tasks", "id", "taskCode")}</div>
@@ -429,7 +406,6 @@ async function runReport() {
     const F = reportState.filters;
     rows = rows.filter((e) => {
         if (F.lineId && e.lineId !== F.lineId) return false;
-        if (F.moduleId && e.moduleId !== F.moduleId) return false;
         if (F.buyerId && e.buyerId !== F.buyerId) return false;
         if (F.styleId && e.styleId !== F.styleId) return false;
         if (F.taskId && e.taskId !== F.taskId) return false;
@@ -474,9 +450,9 @@ function paintReport() {
 }
 
 function exportRows() {
-    const headers = ["Date", "Line", "Module", "Hour", "Stage", "Task", "Buyer", "Style", "Worker", "Shift", "Team", "Checked", "TotalDefects", "Passed", "Rejected", "DHU%", "Pass%", "Reject%"];
+    const headers = ["Date", "Line", "Hour", "Stage", "Task", "Buyer", "Style", "Worker", "Shift", "Team", "Checked", "TotalDefects", "Passed", "Rejected", "DHU%", "Pass%", "Reject%"];
     const rows = reportState.rows.map((r) => [
-        r.date, nameOf("productionLines", r.lineId), nameOf("modules", r.moduleId), "Hour " + r.hour,
+        r.date, nameOf("productionLines", r.lineId), "Hour " + r.hour,
         STAGES[r.stage] || r.stage, r.taskCode || "", nameOf("buyers", r.buyerId), nameOf("styles", r.styleId),
         r.workerName || "", r.shiftName || r.shift || "", r.teamName || r.team || "",
         r.checkedQty, r.totalDefects, r.passedQty, r.rejectedQty, r.dhu, r.passPct, r.rejectPct]);
@@ -654,7 +630,6 @@ function userForm(record = null, id = null) {
     const back = document.createElement("div");
     back.className = "modal-back";
     const lineOpts = list("productionLines").map((l) => `<option value="${l.id}" ${record?.assignedLine === l.id ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("");
-    const modOpts = list("modules").map((m) => `<option value="${m.id}" ${record?.assignedModule === m.id ? "selected" : ""}>${escapeHtml(m.name)}</option>`).join("");
     const teamOpts = list("teams").map((t) => `<option value="${t.name}" ${record?.assignedTeam === t.name ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("");
     back.innerHTML = `
       <div class="modal"><div class="modal-head">${record ? "Edit" : "Create"} User</div>
@@ -670,9 +645,8 @@ function userForm(record = null, id = null) {
               <option value="true" ${record?.active !== false ? "selected" : ""}>Active</option>
               <option value="false" ${record?.active === false ? "selected" : ""}>Disabled</option></select></div>
           </div>
-          <div class="grid-3">
+          <div class="grid-2">
             <div class="field"><label>Line</label><select name="assignedLine"><option value="">—</option>${lineOpts}</select></div>
-            <div class="field"><label>Module</label><select name="assignedModule"><option value="">—</option>${modOpts}</select></div>
             <div class="field"><label>Team</label><select name="assignedTeam"><option value="">—</option>${teamOpts}</select></div>
           </div>
           <p class="faint" style="font-size:12px">Credentials are stored in the database (password is salted + hashed). Share the username + password with the worker.</p>
@@ -686,7 +660,7 @@ function userForm(record = null, id = null) {
         const g = (n) => back.querySelector(`[name="${n}"]`).value.trim();
         const data = {
             name: g("name"), role: g("role"), active: g("active") === "true",
-            assignedLine: g("assignedLine") || null, assignedModule: g("assignedModule") || null,
+            assignedLine: g("assignedLine") || null,
             assignedTeam: g("assignedTeam") || null
         };
         if (!data.name) return toast("Name is required", "warn");
