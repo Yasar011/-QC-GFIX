@@ -6,12 +6,17 @@ inspection data on a simple tablet-friendly screen; Admins get a live
 dashboard, dynamic task configuration, filtering, analytics and exports.
 
 Built with **vanilla HTML5 + CSS3 + ES6 modules** (no framework), **Firebase**
-(Auth + Realtime Database + Hosting) and **Chart.js**. All QMS data lives
-exclusively under the `AAAQMS/` database root, isolated from anything else in
-the Firebase project.
+(Realtime Database + Hosting) and **Chart.js**. All QMS data lives under the
+`AAAQMS/` database root. Runs on its own dedicated Firebase project (`qc-g-fi`).
+
+Login is **username + password stored in the database** (under
+`AAAQMS/users`, salted + SHA-256 hashed) — workers do **not** need email
+accounts. The first person to sign in with no existing users creates the
+Admin account via a one-time setup screen.
 
 > The previous IoT machine-sensor monitor that used to be `index.html` is
-> preserved unchanged at **`machine-monitor.html`**.
+> preserved unchanged at **`machine-monitor.html`** (still points at the old
+> Firebase project it always used).
 
 ---
 
@@ -108,35 +113,48 @@ Reject %     = rejectedQty / checkedQty × 100
 
 ## Setup & deploy
 
-1. **Firebase project** — this app reuses the existing project in
-   `js/firebase-config.js`. Enable **Email/Password** sign-in in
-   Firebase Authentication.
+1. **Realtime Database** — this project (`qc-g-fi`) uses
+   `https://qc-g-fi-default-rtdb.firebaseio.com` (already set in
+   `js/firebase-config.js`). If it hasn't been created yet, do so in the
+   Firebase Console: **Build → Realtime Database → Create Database**.
 
-2. **Security rules** — the rules in `database.rules.json` lock down the
-   `AAAQMS/` subtree (workers can submit but not delete entries; only admins can
-   edit configuration). They also keep `machine_1` (the legacy monitor)
-   readable/writable by authenticated users.
-   ⚠️ **Reconcile with any existing rules** before deploying — deploying
-   replaces the whole database ruleset. If your project has other apps with
-   their own paths, merge their rules into this file first.
+2. **Anonymous sign-in** — Firebase Console → **Authentication → Sign-in
+   method → Anonymous → Enable**. The app uses this only to open a database
+   connection; actual identity/role comes from the username + password
+   record in `AAAQMS/users`, not from Firebase Auth.
+   (If you'd rather not touch Authentication at all, you can instead set
+   the Realtime Database rules to fully open — `.read`/`.write`: `true` —
+   but that removes all access control, so only do this for local testing.)
 
-3. **First admin** — the **first account to sign in** is automatically promoted
-   to Admin (bootstrap). Create that user in the Firebase Auth console (or just
-   sign in with a new email/password), then use the Admin **Users** screen to
-   create workers and assign them to lines/modules/teams.
+3. **Security rules** — `database.rules.json` requires `auth != null` for
+   all `AAAQMS/` access, and additionally blocks deleting a submitted hourly
+   entry once it's been saved. Deploy with:
+   ```bash
+   firebase deploy --only database
+   ```
+   (This is a dedicated project for this app, so no other paths need to be
+   preserved — no reconciliation needed.)
 
-4. **Run locally**
+4. **First admin** — open the app with no users in the database yet, and
+   you'll see a **"Create the first Admin"** screen (name, username,
+   password). After that, use the Admin **Users** screen to create workers
+   and assign them to lines/modules/teams — just name, username and password,
+   no email needed.
+
+5. **Run locally**
    ```bash
    npx serve .        # or: python3 -m http.server
    ```
    Open the served URL (ES modules require http://, not file://).
 
-5. **Deploy**
+6. **Deploy**
    ```bash
    firebase deploy --only hosting,database
    ```
+   or import the repo into Vercel (`vercel.json` is already configured for a
+   static, no-build deployment).
 
-6. **Sample data (optional)** — sign in as Admin, open the browser console and run:
+7. **Sample data (optional)** — sign in as Admin, open the browser console and run:
    ```js
    import('./seed.js').then(m => m.seed())
    ```

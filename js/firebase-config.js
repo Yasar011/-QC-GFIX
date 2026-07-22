@@ -1,9 +1,8 @@
 // =====================================================================
 // Brandix QMS — Firebase Configuration
 // ---------------------------------------------------------------------
-// IMPORTANT: This project shares a Firebase project with other apps.
-// EVERY read/write for the QMS MUST be scoped under the AAAQMS/ root so
-// this application can never interfere with existing data.
+// Dedicated Firebase project for this app (qc-g-fi). All data still
+// lives under the AAAQMS/ root as a clean namespace/convention.
 // Use the qmsRef() helper below instead of ref(db, ...) directly.
 // =====================================================================
 
@@ -12,16 +11,15 @@ import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-aut
 import { getDatabase, ref } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
-// Existing project config (data isolated under AAAQMS/).
 const firebaseConfig = {
-    apiKey: "AIzaSyAn5nAY-bczuJXlCbWazEz9UapTIcbdXHg",
-    authDomain: "fir-arduino-a8ce7.firebaseapp.com",
-    databaseURL: "https://fir-arduino-a8ce7-default-rtdb.firebaseio.com",
-    projectId: "fir-arduino-a8ce7",
-    storageBucket: "fir-arduino-a8ce7.firebasestorage.app",
-    messagingSenderId: "678375654106",
-    appId: "1:678375654106:web:9c91366032ecb5af04dbe3",
-    measurementId: "G-NPGMS5MXXH"
+    apiKey: "AIzaSyBASpaiX5SXEQhHtxS1y-DbR0zh05fTEgI",
+    authDomain: "qc-g-fi.firebaseapp.com",
+    databaseURL: "https://qc-g-fi-default-rtdb.firebaseio.com",
+    projectId: "qc-g-fi",
+    storageBucket: "qc-g-fi.firebasestorage.app",
+    messagingSenderId: "520607851516",
+    appId: "1:520607851516:web:a4e5a905033d423c5e4879",
+    measurementId: "G-M6BN5PSJZZ"
 };
 
 export const app = initializeApp(firebaseConfig);

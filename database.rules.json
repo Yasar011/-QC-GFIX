@@ -3,11 +3,6 @@
     ".read": false,
     ".write": false,
 
-    "machine_1": {
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
-
     "AAAQMS": {
       ".read": "auth != null",
 
