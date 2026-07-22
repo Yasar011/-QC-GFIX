@@ -221,7 +221,7 @@ async function submitEntry() {
     const payload = {
         ...m,
         defects: { ...entryState.defects },
-        workerId: profile.uid, workerName: profile.name,
+        workerId: profile.id, workerName: profile.name,
         taskId: task.id, taskCode: task.taskCode || task.id,
         buyerId: task.buyerId, styleId: task.styleId, moduleId: task.moduleId,
         shift: shiftInfo.shiftKey, shiftName: shiftInfo.shift.name,
@@ -231,7 +231,7 @@ async function submitEntry() {
 
     try {
         await saveEntry(todayKey(), lineId, entryState.hour, entryState.stage, payload);
-        await audit("hourly_entry", `${STAGES[entryState.stage]} · Hour ${entryState.hour} · Line ${lineId} · DHU ${m.dhu}%`, profile.email);
+        await audit("hourly_entry", `${STAGES[entryState.stage]} · Hour ${entryState.hour} · Line ${lineId} · DHU ${m.dhu}%`, profile.username);
         if (m.dhu >= (ref.settings.dhuAlert || 10)) {
             await pushNotification({ type: "high_dhu", severity: "high",
                 text: `High DHU ${m.dhu}% on ${ref.lines[lineId]?.name || lineId} (Hour ${entryState.hour}, ${STAGES[entryState.stage]})`,
@@ -250,7 +250,7 @@ async function submitEntry() {
 async function loadHistory() {
     const day = await getDayEntries(todayKey());
     const rows = flattenDay(todayKey(), day)
-        .filter((r) => r.workerId === profile.uid)
+        .filter((r) => r.workerId === profile.id)
         .sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0))
         .slice(0, 12);
     const host = document.getElementById("w-history");

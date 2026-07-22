@@ -14,7 +14,7 @@ import {
 } from "./utils.js";
 import { render as chart, PALETTE } from "./charts.js";
 import { resolveShiftTeam, DEFAULT_ROTATION } from "./shift.js";
-import { logout, createAuthUser } from "./auth.js";
+import { logout, createUserAccount, resetPassword } from "./auth.js";
 
 let profile;
 const store = {};           // cached collections
@@ -582,8 +582,8 @@ function openForm(key, record = null, id = null) {
             if (f.req && !data[f.k]) return toast(f.label + " is required", "warn");
         }
         try {
-            if (id) { await updateIn(key, id, data); await audit("update_" + key, `${cfg.singular}: ${data.name || data.taskCode || id}`, profile.email); }
-            else { const nid = await createIn(key, data); await audit("create_" + key, `${cfg.singular}: ${data.name || data.taskCode || nid}`, profile.email); }
+            if (id) { await updateIn(key, id, data); await audit("update_" + key, `${cfg.singular}: ${data.name || data.taskCode || id}`, profile.username); }
+            else { const nid = await createIn(key, data); await audit("create_" + key, `${cfg.singular}: ${data.name || data.taskCode || nid}`, profile.username); }
             store[key] = await readOnce(key) || {};
             close(); go(key);
             toast(cfg.singular + " saved", "success");
@@ -620,7 +620,7 @@ async function delRecord(key, id) {
     const name = store[key][id]?.name || store[key][id]?.taskCode || id;
     if (!await confirmDialog(`Delete ${cfg.singular.toLowerCase()} “${name}”? This cannot be undone.`, { danger: true, okText: "Delete" })) return;
     await removeIn(key, id);
-    await audit("delete_" + key, `${cfg.singular}: ${name}`, profile.email);
+    await audit("delete_" + key, `${cfg.singular}: ${name}`, profile.username);
     store[key] = await readOnce(key) || {};
     go(key);
     toast(cfg.singular + " deleted", "success");
@@ -637,9 +637,9 @@ function renderUsers(v) {
         <button class="btn btn-primary" id="u-add">＋ Add User</button>
       </div>
       <div class="card" style="padding:0"><div class="table-wrap"><table><thead><tr>
-        <th>Name</th><th>Email</th><th>Role</th><th>Line</th><th>Team</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead><tbody>
+        <th>Name</th><th>Username</th><th>Role</th><th>Line</th><th>Team</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead><tbody>
         ${users.map((u) => `<tr>
-          <td>${escapeHtml(u.name)}</td><td class="mono">${escapeHtml(u.email)}</td>
+          <td>${escapeHtml(u.name)}</td><td class="mono">${escapeHtml(u.username || "—")}</td>
           <td><span class="badge ${u.role === "admin" ? "blue" : ""}">${u.role}</span></td>
           <td>${escapeHtml(nameOf("productionLines", u.assignedLine))}</td>
           <td>${escapeHtml(u.assignedTeam || "—")}</td>
@@ -660,8 +660,8 @@ function userForm(record = null, id = null) {
       <div class="modal"><div class="modal-head">${record ? "Edit" : "Create"} User</div>
         <div class="modal-body">
           <div class="field"><label>Full Name *</label><input name="name" value="${escapeHtml(record?.name || "")}"></div>
-          <div class="field"><label>Email *</label><input name="email" type="email" value="${escapeHtml(record?.email || "")}" ${record ? "disabled" : ""}></div>
-          ${record ? "" : `<div class="field"><label>Temporary Password *</label><input name="password" type="text" placeholder="min 6 characters"></div>`}
+          <div class="field"><label>Username *</label><input name="username" value="${escapeHtml(record?.username || "")}" ${record ? "disabled" : ""} placeholder="e.g. jshan"></div>
+          <div class="field"><label>${record ? "New Password (leave blank to keep current)" : "Password *"}</label><input name="password" type="text" placeholder="min 6 characters"></div>
           <div class="grid-2">
             <div class="field"><label>Role</label><select name="role">
               <option value="worker" ${record?.role === "worker" ? "selected" : ""}>Worker / QC Inspector</option>
@@ -675,7 +675,7 @@ function userForm(record = null, id = null) {
             <div class="field"><label>Module</label><select name="assignedModule"><option value="">—</option>${modOpts}</select></div>
             <div class="field"><label>Team</label><select name="assignedTeam"><option value="">—</option>${teamOpts}</select></div>
           </div>
-          ${record ? "" : `<p class="faint" style="font-size:12px">A Firebase Auth account is created. Share the email + temporary password with the worker.</p>`}
+          <p class="faint" style="font-size:12px">Credentials are stored in the database (password is salted + hashed). Share the username + password with the worker.</p>
         </div>
         <div class="modal-foot"><button class="btn btn-ghost" data-x>Cancel</button><button class="btn btn-primary" data-save>Save</button></div>
       </div>`;
@@ -690,17 +690,21 @@ function userForm(record = null, id = null) {
             assignedTeam: g("assignedTeam") || null
         };
         if (!data.name) return toast("Name is required", "warn");
+        const pw = g("password");
         try {
             setLoading(true);
             if (id) {
                 await setUser(id, data);
-                await audit("update_user", data.name, profile.email);
+                if (pw) {
+                    if (pw.length < 6) { setLoading(false); return toast("Password must be 6+ characters", "warn"); }
+                    await resetPassword(id, pw);
+                }
+                await audit("update_user", data.name, profile.username);
             } else {
-                const email = g("email"), pw = g("password");
-                if (!email || pw.length < 6) { setLoading(false); return toast("Email and 6+ char password required", "warn"); }
-                const newUid = await createAuthUser(email, pw);
-                await setUser(newUid, { ...data, email, createdAt: Date.now() });
-                await audit("create_user", `${data.name} (${email})`, profile.email);
+                const username = g("username");
+                if (!username || pw.length < 6) { setLoading(false); return toast("Username and 6+ char password required", "warn"); }
+                await createUserAccount({ ...data, username, password: pw });
+                await audit("create_user", `${data.name} (${username})`, profile.username);
             }
             store.users = await readOnce("users") || {};
             setLoading(false); close(); go("users");
@@ -771,7 +775,7 @@ function renderRotation(v) {
             await set(qmsRef("settings/rotation"), rotation);
         });
         store.settings.rotation = rotation;
-        await audit("update_rotation", "Shift/team rotation updated", profile.email);
+        await audit("update_rotation", "Shift/team rotation updated", profile.username);
         updateShiftBadge(); go("rotation");
         toast("Rotation saved", "success");
     };
@@ -856,7 +860,7 @@ function renderSettings(v) {
             company: v.querySelector("#s-name").value.trim() };
         await update(qmsRef("settings"), data);
         store.settings = { ...store.settings, ...data };
-        await audit("update_settings", "System settings updated", profile.email);
+        await audit("update_settings", "System settings updated", profile.username);
         toast("Settings saved", "success");
     };
 }

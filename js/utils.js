@@ -165,3 +165,17 @@ export function toCSV(headers, rows) {
     };
     return [headers.map(esc).join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");
 }
+
+// ---- Password hashing (client-side, salted SHA-256) -----------------
+// Workers/admins are stored in the DB with a salt + hash, never plaintext.
+export function randSalt() {
+    const a = new Uint8Array(12);
+    crypto.getRandomValues(a);
+    return [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function hashPassword(password, salt) {
+    const data = new TextEncoder().encode(`${salt}::${password}`);
+    const buf = await crypto.subtle.digest("SHA-256", data);
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}

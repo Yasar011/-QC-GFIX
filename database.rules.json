@@ -9,51 +9,37 @@
     },
 
     "AAAQMS": {
-      "users": {
-        ".read": "auth != null && root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'",
-        "$uid": {
-          ".read": "auth != null && (auth.uid === $uid || root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin')",
-          ".write": "auth != null && (root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin' || (auth.uid === $uid && !data.exists() && (!root.child('AAAQMS/users').exists() || newData.child('role').val() === 'worker')))"
-        }
-      },
+      ".read": "auth != null",
 
       "hourlyEntries": {
-        ".read": "auth != null",
         "$date": {
           "$line": {
             "$hour": {
               "$stage": {
-                ".write": "auth != null && (root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin' || newData.exists())"
+                ".write": "auth != null && newData.exists()"
               }
             }
           }
         }
       },
 
-      "notifications": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      },
-
-      "logs": {
-        ".read": "auth != null && root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'",
-        ".write": "auth != null && newData.exists()"
-      },
-
-      "productionLines":     { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "modules":             { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "buyers":              { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "styles":              { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "tasks":               { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "inspectionTemplates": { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "defects":             { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "shifts":              { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "teams":               { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "settings":            { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "appConfig":           { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "reports":             { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "analytics":           { ".read": "auth != null", ".write": "root.child('AAAQMS/users/' + auth.uid + '/role').val() === 'admin'" },
-      "dashboardCache":      { ".read": "auth != null", ".write": "auth != null" }
+      "users":               { ".write": "auth != null" },
+      "productionLines":     { ".write": "auth != null" },
+      "modules":             { ".write": "auth != null" },
+      "buyers":              { ".write": "auth != null" },
+      "styles":              { ".write": "auth != null" },
+      "tasks":               { ".write": "auth != null" },
+      "inspectionTemplates": { ".write": "auth != null" },
+      "defects":             { ".write": "auth != null" },
+      "shifts":              { ".write": "auth != null" },
+      "teams":               { ".write": "auth != null" },
+      "settings":            { ".write": "auth != null" },
+      "appConfig":           { ".write": "auth != null" },
+      "reports":             { ".write": "auth != null" },
+      "analytics":           { ".write": "auth != null" },
+      "notifications":       { ".write": "auth != null" },
+      "logs":                { ".write": "auth != null" },
+      "dashboardCache":      { ".write": "auth != null" }
     }
   }
 }
