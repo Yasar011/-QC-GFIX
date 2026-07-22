@@ -539,16 +539,46 @@ function generatePDF(entries, { title = "Brandix QMS — Quality Report", subtit
     toast("PDF exported", "success");
 }
 
-/** Dashboard: download today's data for the currently selected single line only. */
+/**
+ * Dashboard: download today's data for the currently selected single line
+ * only — a per-stage summary (End Line, Roving, Third Party, etc.) with a
+ * TOTAL row for the whole line. No "Checked" column, defect-focused.
+ */
 function exportDashboardPDF() {
     if (!dashLineId) return toast("Select a single production line first", "warn");
     const entries = todayEntries.filter((e) => e.lineId === dashLineId);
+    if (!entries.length) return toast("No entries for this line today", "warn");
     const lineName = nameOf("productionLines", dashLineId);
-    generatePDF(entries, {
-        title: `Brandix QMS — ${lineName} Daily Report`,
-        subtitle: `Date: ${todayKey()}   ·   Generated: ${new Date().toLocaleString()}`,
-        filename: `qms-${lineName.replace(/\s+/g, "-").toLowerCase()}-${todayKey()}.pdf`
+    const a = aggregate(entries);
+
+    const { jsPDF } = window.jspdf || {};
+    if (!jsPDF) return toast("PDF library not loaded", "error");
+
+    const headers = ["Stage", "Total Defects", "Passed", "Rejected", "DHU%", "Pass%", "Reject%"];
+    const rejectPctOf = (m) => m.checked ? round2(m.rejected / m.checked * 100) : 0;
+    const stageRows = Object.entries(STAGES)
+        .filter(([k]) => a.byStage[k])
+        .map(([k, label]) => {
+            const m = a.byStage[k];
+            return [label, m.defects, m.passed, m.rejected,
+                dhuOf(m).toFixed(2), passPctOf(m).toFixed(2), rejectPctOf(m).toFixed(2)];
+        });
+    const totalRow = ["TOTAL", a.defects, a.passed, a.rejected,
+        a.dhu.toFixed(2), a.passPct.toFixed(2), a.rejectPct.toFixed(2)];
+
+    const doc = new jsPDF("p", "mm", "a4");
+    doc.setFillColor(37, 99, 235); doc.rect(0, 0, 210, 22, "F");
+    doc.setTextColor(255); doc.setFontSize(16); doc.text(`Brandix QMS — ${lineName} Daily Report`, 12, 14);
+    doc.setTextColor(30); doc.setFontSize(9);
+    doc.text(`Date: ${todayKey()}   ·   Generated: ${new Date().toLocaleString()}`, 12, 30);
+    doc.autoTable({
+        startY: 34, head: [headers], body: stageRows, foot: [totalRow], showFoot: "lastPage",
+        styles: { fontSize: 10 }, headStyles: { fillColor: [37, 99, 235] },
+        footStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: "bold" },
+        theme: "striped"
     });
+    doc.save(`qms-${lineName.replace(/\s+/g, "-").toLowerCase()}-${todayKey()}.pdf`);
+    toast("PDF exported", "success");
 }
 
 const dateRange = (from, to) => {
