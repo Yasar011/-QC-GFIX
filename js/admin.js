@@ -211,7 +211,7 @@ function subscribeLive() {
 // =====================================================================
 function aggregate(entries) {
     let checked = 0, defects = 0, rejected = 0, passed = 0;
-    const byHour = {}, byDefect = {}, byLine = {}, byTeam = {}, byShift = {};
+    const byHour = {}, byDefect = {}, byLine = {}, byTeam = {}, byShift = {}, byStage = {};
     const workers = new Set(), tasks = new Set(), lines = new Set();
     entries.forEach((e) => {
         checked += +e.checkedQty || 0; defects += +e.totalDefects || 0;
@@ -221,29 +221,44 @@ function aggregate(entries) {
         if (e.lineId) lines.add(e.lineId);
         agg(byHour, "H" + e.hour, e); agg(byLine, e.lineId, e);
         agg(byTeam, e.teamName || e.team, e); agg(byShift, e.shiftName || e.shift, e);
+        agg(byStage, e.stage, e);
         Object.entries(e.defects || {}).forEach(([d, c]) => byDefect[d] = (byDefect[d] || 0) + (+c || 0));
     });
     return { checked, defects, rejected, passed,
         dhu: checked ? round2(defects / checked * 100) : 0,
         passPct: checked ? round2(passed / checked * 100) : 0,
         rejectPct: checked ? round2(rejected / checked * 100) : 0,
-        byHour, byDefect, byLine, byTeam, byShift,
+        byHour, byDefect, byLine, byTeam, byShift, byStage,
         workers, tasks, lines, count: entries.length };
 }
 function agg(map, key, e) {
     if (!key) return;
-    const m = map[key] || (map[key] = { checked: 0, defects: 0 });
+    const m = map[key] || (map[key] = { checked: 0, defects: 0, rejected: 0, passed: 0 });
     m.checked += +e.checkedQty || 0; m.defects += +e.totalDefects || 0;
+    m.rejected += +e.rejectedQty || 0; m.passed += +e.passedQty || 0;
 }
 const dhuOf = (m) => m.checked ? round2(m.defects / m.checked * 100) : 0;
+const passPctOf = (m) => m.checked ? round2(m.passed / m.checked * 100) : 0;
+
+let dashLineId = "";
 
 function renderDashboard(v) {
-    const a = aggregate(todayEntries);
-    const activeTasks = list("tasks").filter((t) => t.active !== false);
+    const entries = dashLineId ? todayEntries.filter((e) => e.lineId === dashLineId) : todayEntries;
+    const a = aggregate(entries);
+    const activeTasks = list("tasks").filter((t) => t.active !== false && (!dashLineId || t.lineId === dashLineId));
     const expected = expectedSlots(activeTasks);
     const pending = Math.max(0, expected - a.count);
+    const lineOpts = list("productionLines").map((l) =>
+        `<option value="${l.id}" ${dashLineId === l.id ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("");
 
     v.innerHTML = `
+      <div class="filterbar row" style="margin-bottom:16px;position:static">
+        <label style="margin:0"><span class="faint" style="font-size:11px;display:block;margin-bottom:4px">Production Line</span>
+          <select id="d-line" style="width:200px"><option value="">All Lines</option>${lineOpts}</select></label>
+        <span class="right"></span>
+        <button class="btn btn-ghost btn-sm" id="d-pdf" ${dashLineId ? "" : "disabled"} title="${dashLineId ? "Download this line's data as PDF" : "Select a single line to enable"}">⬇ Download Line PDF</button>
+      </div>
+
       <div class="stats" style="margin-bottom:16px">
         ${stat("Workers Online", a.workers.size, "◍", "Submitting today")}
         ${stat("Active Lines", a.lines.size + " / " + list("productionLines").length, "▥", "Reporting today")}
@@ -257,11 +272,15 @@ function renderDashboard(v) {
         ${stat("Pending Entries", pending, "◷", "Expected " + expected, pending > 0 ? "warn" : "good")}
       </div>
 
+      <div class="section-label">Inspection Stage Breakdown</div>
+      <div class="card" style="margin-bottom:16px;padding:0">${stageTable(a)}</div>
+
       <div class="grid-cards" style="margin-bottom:16px">
         <div class="card"><div class="card-head"><div class="card-title">DHU Trend by Hour</div></div><div class="chart-box"><canvas id="c-hour"></canvas></div></div>
+        <div class="card"><div class="card-head"><div class="card-title">DHU by Stage</div></div><div class="chart-box"><canvas id="c-stage"></canvas></div></div>
         <div class="card"><div class="card-head"><div class="card-title">Pass vs Reject</div></div><div class="chart-box"><canvas id="c-pr"></canvas></div></div>
         <div class="card"><div class="card-head"><div class="card-title">Top Defects</div></div><div class="chart-box"><canvas id="c-def"></canvas></div></div>
-        <div class="card"><div class="card-head"><div class="card-title">Line Performance (DHU%)</div></div><div class="chart-box"><canvas id="c-line"></canvas></div></div>
+        ${dashLineId ? "" : `<div class="card"><div class="card-head"><div class="card-title">Line Performance (DHU%)</div></div><div class="chart-box"><canvas id="c-line"></canvas></div></div>`}
         <div class="card"><div class="card-head"><div class="card-title">Team Performance</div></div><div class="chart-box"><canvas id="c-team"></canvas></div></div>
         <div class="card"><div class="card-head"><div class="card-title">Shift Performance</div></div><div class="chart-box"><canvas id="c-shift"></canvas></div></div>
       </div>
@@ -273,7 +292,7 @@ function renderDashboard(v) {
       </div>`;
 
     drawDashCharts(a);
-    const recent = [...todayEntries].sort((x, y) => (y.savedAt || 0) - (x.savedAt || 0)).slice(0, 10);
+    const recent = [...entries].sort((x, y) => (y.savedAt || 0) - (x.savedAt || 0)).slice(0, 10);
     document.getElementById("d-recent").innerHTML = recent.length ? `
       <div class="table-wrap"><table><thead><tr>
         <th>Time</th><th>Worker</th><th>Line</th><th>Hour</th><th>Stage</th><th>Checked</th><th>DHU</th></tr></thead><tbody>
@@ -283,7 +302,27 @@ function renderDashboard(v) {
           <td>Hour ${r.hour}</td><td>${STAGES[r.stage] || r.stage}</td><td>${r.checkedQty}</td>
           <td><span class="badge ${dhuClass(r.dhu)}">${(r.dhu ?? 0)}%</span></td></tr>`).join("")}
       </tbody></table></div>` : `<div class="empty">No submissions yet today.</div>`;
+
+    v.querySelector("#d-line").onchange = (e) => { dashLineId = e.target.value; renderDashboard(v); };
+    v.querySelector("#d-pdf").onclick = exportDashboardPDF;
     updateShiftBadge();
+}
+
+function stageTable(a) {
+    const rows = Object.entries(STAGES).filter(([k]) => a.byStage[k]);
+    if (!rows.length) return `<div class="empty">No stage entries yet today.</div>`;
+    return `<div class="table-wrap"><table><thead><tr>
+        <th>Stage</th><th>Checked</th><th>Total Defects</th><th>Passed</th><th>Rejected</th><th>DHU%</th><th>Pass%</th></tr></thead><tbody>
+        ${rows.map(([k, label]) => {
+            const m = a.byStage[k];
+            const dhu = dhuOf(m);
+            return `<tr>
+              <td style="font-weight:700">${label}</td><td>${m.checked}</td><td>${m.defects}</td>
+              <td class="text-good">${m.passed}</td><td class="text-bad">${m.rejected}</td>
+              <td><span class="badge ${dhuClass(dhu)}">${dhu.toFixed(2)}</span></td>
+              <td>${passPctOf(m).toFixed(2)}</td></tr>`;
+        }).join("")}
+      </tbody></table></div>`;
 }
 
 function expectedSlots(activeTasks) {
@@ -317,6 +356,7 @@ function drawDashCharts(a) {
     barByGroup("c-line", a.byLine, (id) => nameOf("productionLines", id), PALETTE[0]);
     barByGroup("c-team", a.byTeam, (k) => k, PALETTE[2]);
     barByGroup("c-shift", a.byShift, (k) => k, PALETTE[5]);
+    barByGroup("c-stage", a.byStage, (k) => STAGES[k] || k, PALETTE[6]);
 }
 function barByGroup(id, map, label, color) {
     const rows = Object.entries(map).filter(([k]) => k && k !== "undefined");
@@ -449,9 +489,9 @@ function paintReport() {
       </tbody></table></div>${rows.length > 300 ? `<div class="faint" style="padding:10px">Showing first 300 of ${rows.length}. Export for full data.</div>` : ""}`;
 }
 
-function exportRows() {
+function exportRows(entries) {
     const headers = ["Date", "Line", "Hour", "Stage", "Task", "Buyer", "Style", "Worker", "Shift", "Team", "Checked", "TotalDefects", "Passed", "Rejected", "DHU%", "Pass%", "Reject%"];
-    const rows = reportState.rows.map((r) => [
+    const rows = entries.map((r) => [
         r.date, nameOf("productionLines", r.lineId), "Hour " + r.hour,
         STAGES[r.stage] || r.stage, r.taskCode || "", nameOf("buyers", r.buyerId), nameOf("styles", r.styleId),
         r.workerName || "", r.shiftName || r.shift || "", r.teamName || r.team || "",
@@ -459,12 +499,12 @@ function exportRows() {
     return { headers, rows };
 }
 function exportCSV() {
-    const { headers, rows } = exportRows();
+    const { headers, rows } = exportRows(reportState.rows);
     downloadFile(`qms-report-${todayKey()}.csv`, toCSV(headers, rows), "text/csv");
     toast("CSV exported", "success");
 }
 function exportXLS() {
-    const { headers, rows } = exportRows();
+    const { headers, rows } = exportRows(reportState.rows);
     if (window.XLSX) {
         const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
         const wb = XLSX.utils.book_new();
@@ -476,18 +516,39 @@ function exportXLS() {
     toast("Excel exported", "success");
 }
 function exportPDF() {
-    const { headers, rows } = exportRows();
+    generatePDF(reportState.rows, {
+        subtitle: `Range: ${reportState.from} to ${reportState.to}   ·   Generated: ${new Date().toLocaleString()}`,
+        filename: `qms-report-${todayKey()}.pdf`
+    });
+}
+
+/** Shared PDF builder used by both the Reports export and the Dashboard's line-only export. */
+function generatePDF(entries, { title = "Brandix QMS — Quality Report", subtitle = "", filename } = {}) {
+    if (!entries.length) return toast("No data to export", "warn");
+    const { headers, rows } = exportRows(entries);
     const { jsPDF } = window.jspdf || {};
     if (!jsPDF) return toast("PDF library not loaded", "error");
     const doc = new jsPDF("l", "mm", "a4");
     doc.setFillColor(37, 99, 235); doc.rect(0, 0, 297, 22, "F");
-    doc.setTextColor(255); doc.setFontSize(16); doc.text("Brandix QMS — Quality Report", 12, 14);
+    doc.setTextColor(255); doc.setFontSize(16); doc.text(title, 12, 14);
     doc.setTextColor(30); doc.setFontSize(9);
-    doc.text(`Range: ${reportState.from} to ${reportState.to}   ·   Generated: ${new Date().toLocaleString()}`, 12, 30);
+    doc.text(subtitle || `Generated: ${new Date().toLocaleString()}`, 12, 30);
     doc.autoTable({ startY: 34, head: [headers], body: rows, styles: { fontSize: 7 },
         headStyles: { fillColor: [37, 99, 235] }, theme: "striped" });
-    doc.save(`qms-report-${todayKey()}.pdf`);
+    doc.save(filename || `qms-report-${todayKey()}.pdf`);
     toast("PDF exported", "success");
+}
+
+/** Dashboard: download today's data for the currently selected single line only. */
+function exportDashboardPDF() {
+    if (!dashLineId) return toast("Select a single production line first", "warn");
+    const entries = todayEntries.filter((e) => e.lineId === dashLineId);
+    const lineName = nameOf("productionLines", dashLineId);
+    generatePDF(entries, {
+        title: `Brandix QMS — ${lineName} Daily Report`,
+        subtitle: `Date: ${todayKey()}   ·   Generated: ${new Date().toLocaleString()}`,
+        filename: `qms-${lineName.replace(/\s+/g, "-").toLowerCase()}-${todayKey()}.pdf`
+    });
 }
 
 const dateRange = (from, to) => {

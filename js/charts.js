@@ -35,11 +35,18 @@ export function render(id, type, data, extraOpts = {}) {
     if (!el) return null;
     const opts = deepMerge(base(), extraOpts);
     if (registry.has(id)) {
-        const ch = registry.get(id);
-        ch.data = data;
-        ch.options = opts;
-        ch.update();
-        return ch;
+        const existing = registry.get(id);
+        // Views re-render their whole markup (incl. canvases) on every update,
+        // so a registered chart's canvas may now be a detached, orphaned node.
+        // Reuse it only if it's still the live element; otherwise recreate.
+        if (existing.canvas === el) {
+            existing.data = data;
+            existing.options = opts;
+            existing.update();
+            return existing;
+        }
+        existing.destroy();
+        registry.delete(id);
     }
     const ch = new Chart(el.getContext("2d"), { type, data, options: opts });
     registry.set(id, ch);
