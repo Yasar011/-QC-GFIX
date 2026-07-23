@@ -51,14 +51,9 @@ export async function setUser(uidKey, data) {
 // ---- Hourly entries -------------------------------------------------
 // Path: hourlyEntries/{date}/{lineId}/{hour}/{stage}
 //
-// A whole hour is submitted together (one row per required stage). Saving
-// REPLACES the entire hour node, so re-submitting an already-completed
-// hour overwrites the previous data for that hour rather than layering
-// on top of it — there is never stale/duplicate data for the same hour.
-export async function getHourEntry(date, lineId, hour) {
-    return readOnce(`hourlyEntries/${date}/${lineId}/hour${hour}`);
-}
-
+// A whole hour is submitted together (one row per required stage), and
+// once submitted the worker app locks it — an hour is never re-opened
+// or re-submitted, so this always writes a brand-new hour node.
 export async function saveHourEntries(date, lineId, hour, stagePayloads) {
     const now = Date.now();
     const node = {};

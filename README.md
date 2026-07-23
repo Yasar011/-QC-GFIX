@@ -28,15 +28,16 @@ Admin account via a one-time setup screen.
 - One big **START HOURLY ENTRY** button, which opens **one form for the whole
   hour**: every inspection stage the task requires (Inline, End Line, Third
   Party, ...) is entered together in the same screen.
-- For each stage, the worker enters only **Checked Quantity** and **Defect
-  Quantity** (with an optional per-defect breakdown). The system
-  auto-calculates Total Defects, Passed, Rejected, DHU %, Pass % and Reject %
-  — the worker never calculates anything.
-- **Single submit** saves every stage for that hour at once. Reopening and
-  resubmitting an already-completed hour **overwrites** it — there's never
-  stale or duplicate data for the same hour.
+- For each stage, the worker enters **Checked Quantity**, **Defect Quantity**,
+  and a per-defect breakdown (always shown, so defect-level reporting always
+  has real data behind it). The system auto-calculates Total Defects, Passed,
+  Rejected, DHU %, Pass % and Reject % — the worker never calculates anything.
+- **Single submit** saves every stage for that hour at once.
+- Once an hour is submitted it is **locked** — there is no way to reopen or
+  re-edit it. The app automatically advances to the next hour that hasn't
+  been submitted yet; the worker never picks which hour to fill in.
 - Sees **only** the inspection stages and defects assigned to the current task.
-- Views their own recent entries; clicking an hour reopens it for editing.
+- Views their own submitted entries (read-only, for reference).
 
 **Admin**
 - Live dashboard: workers online, active lines/tasks, today's DHU, pass/reject,
@@ -95,8 +96,9 @@ AAAQMS/
 │        → checkedQty, defectQty, defects{}, totalDefects, passedQty,
 │          rejectedQty, dhu, passPct, rejectPct, worker/task/shift/team, savedAt
 │        + calculations (per-hour rollup)
-│        Note: the whole hour{N} node is written together and REPLACED on
-│        every submit — editing an hour overwrites it, never appends.
+│        Note: the whole hour{N} node is written once, in a single submit
+│        covering every stage. The worker app never resubmits an hour that
+│        already has data — hours are locked once submitted.
 ├── notifications/{id}           type, severity, text, ts, read
 └── logs/{id}                    action, detail, actor, ts   (audit trail)
 ```

@@ -6,26 +6,29 @@
 //
 // One hour = one form. Every required stage (Inline / End Line / Third
 // Party / ...) is entered together and submitted in a single action.
-// Resubmitting an already-completed hour overwrites it — there's never
-// stale or duplicate data for that hour.
+// Once an hour is submitted it is LOCKED — there is no way to reopen or
+// re-edit it. The system automatically advances to the next hour that
+// hasn't been submitted yet; the worker never chooses which hour.
 // =====================================================================
 
-import { readOnce, toList, saveHourEntries, getHourEntry, getDayEntries, flattenDay,
+import { readOnce, toList, saveHourEntries, getDayEntries, flattenDay,
          pushNotification, audit } from "./db.js";
-import { STAGES, calcMetrics, todayKey, currentHourIndex, DEFAULT_HOURS,
-         toast, escapeHtml, dhuClass, confirmDialog } from "./utils.js";
+import { STAGES, calcMetrics, todayKey, DEFAULT_HOURS,
+         toast, escapeHtml, dhuClass } from "./utils.js";
 import { resolveShiftTeam } from "./shift.js";
 import { logout } from "./auth.js";
 
 let ref = {};        // reference collections
-let profile, task, lineId, shiftInfo;
-let entryState = { hour: 1, stages: {} };   // stages: { [stageKey]: { checkedQty, defectQty, defects:{} } }
-let existingHour = null;                     // previously saved data for the selected hour, if any
+let profile, task, lineId, shiftInfo, rootEl;
+let entryState = { hour: null, stages: {} };   // stages: { [stageKey]: { checkedQty, defectQty, defects:{} } }
+let submittedHours = new Set();
 
 export async function mountWorker(root, prof) {
     profile = prof;
+    rootEl = root;
     await loadReference();
     resolveContext();
+    await loadDayState();
     render(root);
 }
 
@@ -54,7 +57,24 @@ function resolveContext() {
         task = activeTasks[0] || null;
         lineId = task?.lineId || null;
     }
-    entryState.hour = currentHourIndex(shiftInfo.shift);
+}
+
+/** Which hours already have submitted data for this line today (locked). */
+async function loadDayState() {
+    submittedHours = new Set();
+    if (!lineId) return;
+    const day = await getDayEntries(todayKey());
+    const lineDay = day?.[lineId] || {};
+    Object.keys(lineDay).forEach((hk) => {
+        const stages = lineDay[hk];
+        const hasData = stages && Object.keys(stages).some((s) => s !== "calculations");
+        if (hasData) submittedHours.add(Number(String(hk).replace("hour", "")));
+    });
+}
+
+function nextOpenHour() {
+    for (let h = 1; h <= DEFAULT_HOURS; h++) if (!submittedHours.has(h)) return h;
+    return null; // every hour today is already submitted
 }
 
 // ---- Task-derived stage & defect lists ------------------------------
@@ -73,6 +93,7 @@ function render(root) {
     const st = ref.styles[task?.styleId]?.name || "—";
     const ln = ref.lines[lineId]?.name || "—";
     const initials = (profile.name || "W").slice(0, 2).toUpperCase();
+    const nextHour = nextOpenHour();
 
     root.innerHTML = `
     <div class="worker-shell">
@@ -97,15 +118,22 @@ function render(root) {
             ${cell("Buyer", b)} ${cell("Style", st)} ${cell("Task ID", task.taskCode || task.id)}
             ${cell("Production Line", ln)}
             ${cell("Shift", shiftInfo.shift.name)} ${cell("Team", shiftInfo.currentTeamName)}
-            ${cell("Current Hour", "Hour " + entryState.hour)}
+            ${cell("Current Hour", nextHour ? "Hour " + nextHour : "All done ✓")}
           </div>
         </div>
+        ${nextHour ? `
         <button class="btn btn-primary btn-lg btn-block" id="w-start" style="margin-bottom:20px">
-          ▶ START HOURLY ENTRY
-        </button>
+          ▶ START HOUR ${nextHour} ENTRY
+        </button>` : `
+        <div class="card" style="margin-bottom:20px;text-align:center;padding:24px">
+          <div style="font-size:28px">✓</div>
+          <div style="font-weight:700;margin-top:6px">All ${DEFAULT_HOURS} hours submitted for today</div>
+          <div class="faint" style="font-size:13px;margin-top:4px">Nothing left to enter — check back next shift.</div>
+        </div>`}
         <div id="w-entry"></div>
         <div class="card" style="margin-top:20px">
-          <div class="card-head"><div class="card-title">My Recent Entries</div></div>
+          <div class="card-head"><div class="card-title">My Submitted Entries</div>
+            <span class="faint" style="font-size:12px">Locked — cannot be edited</span></div>
           <div id="w-history"><div class="empty">Loading…</div></div>
         </div>` : ""}
       </div>
@@ -114,27 +142,20 @@ function render(root) {
     root.querySelector("#w-logout").onclick = () => logout();
     root.querySelector("#w-theme").onclick = toggleTheme;
     if (task) {
-        root.querySelector("#w-start").onclick = () => openHour(entryState.hour);
+        const startBtn = root.querySelector("#w-start");
+        if (startBtn) startBtn.onclick = startEntry;
         loadHistory();
     }
 }
 
 const cell = (k, v) => `<div class="task-cell"><div class="k">${k}</div><div class="v">${escapeHtml(v)}</div></div>`;
 
-async function openHour(hour) {
-    entryState.hour = hour;
-    const stages = taskStages();
-    existingHour = await getHourEntry(todayKey(), lineId, hour);
-
+function startEntry() {
+    const h = nextOpenHour();
+    if (h === null) return;
+    entryState.hour = h;
     entryState.stages = {};
-    stages.forEach((s) => {
-        const prev = existingHour?.[s];
-        entryState.stages[s] = {
-            checkedQty: prev?.checkedQty ?? "",
-            defectQty: prev?.defectQty ?? "",
-            defects: { ...(prev?.defects || {}) }
-        };
-    });
+    taskStages().forEach((s) => { entryState.stages[s] = { checkedQty: "", defectQty: "", defects: {} }; });
     renderEntry();
 }
 
@@ -142,19 +163,12 @@ function renderEntry() {
     const host = document.getElementById("w-entry");
     const stages = taskStages();
     const defects = taskDefects();
-    const hours = Array.from({ length: DEFAULT_HOURS }, (_, i) => i + 1);
-    const isUpdate = !!existingHour;
 
     host.innerHTML = `
     <div class="card">
       <div class="row" style="margin-bottom:14px">
-        <label style="margin:0;flex:1">
-          Inspection Hour
-          <select id="e-hour">
-            ${hours.map((h) => `<option value="${h}" ${h === entryState.hour ? "selected" : ""}>Hour ${h}</option>`).join("")}
-          </select>
-        </label>
-        ${isUpdate ? `<span class="badge warn" style="margin-top:18px">Already submitted — editing will overwrite</span>` : ""}
+        <span class="badge blue" style="font-size:13px">Hour ${entryState.hour}</span>
+        <span class="faint right" style="font-size:12px">Locks once submitted</span>
       </div>
 
       ${stages.length ? stages.map((s) => stageBlock(s, defects)).join("") : `<div class="empty">This task has no inspection stages configured.</div>`}
@@ -164,11 +178,10 @@ function renderEntry() {
 
       <div class="row" style="margin-top:18px">
         <button class="btn btn-ghost" id="e-cancel">Cancel</button>
-        <button class="btn btn-primary right" id="e-submit">${isUpdate ? "✓ Update Entry" : "✓ Submit Entry"}</button>
+        <button class="btn btn-primary right" id="e-submit">✓ Submit Entry</button>
       </div>
     </div>`;
 
-    host.querySelector("#e-hour").onchange = (e) => openHour(Number(e.target.value));
     host.querySelectorAll("[data-checked]").forEach((inp) =>
         inp.oninput = () => { entryState.stages[inp.dataset.checked].checkedQty = inp.value; updateCalc(); });
     host.querySelectorAll("[data-defectqty]").forEach((inp) =>
@@ -181,11 +194,6 @@ function renderEntry() {
         });
     host.querySelectorAll("[data-inc]").forEach((btn) => btn.onclick = () => step(btn.dataset.inc, 1));
     host.querySelectorAll("[data-dec]").forEach((btn) => btn.onclick = () => step(btn.dataset.dec, -1));
-    host.querySelectorAll("[data-toggle-defects]").forEach((btn) =>
-        btn.onclick = () => {
-            const box = host.querySelector(`[data-defects-box="${btn.dataset.toggleDefects}"]`);
-            box.classList.toggle("hidden");
-        });
     host.querySelector("#e-cancel").onclick = () => { host.innerHTML = ""; };
     host.querySelector("#e-submit").onclick = submitHour;
     updateCalc();
@@ -195,10 +203,7 @@ function stageBlock(stage, defects) {
     const st = entryState.stages[stage];
     return `
     <div class="task-cell" style="margin-bottom:14px">
-      <div class="row" style="margin-bottom:10px">
-        <div class="v" style="font-size:15px">${STAGES[stage]}</div>
-        ${defects.length ? `<button class="iconbtn right" data-toggle-defects="${stage}" type="button">Defect breakdown ▾</button>` : ""}
-      </div>
+      <div class="v" style="font-size:15px;margin-bottom:10px">${STAGES[stage]}</div>
       <div class="grid-2">
         <div class="field"><label>Checked Qty</label>
           <input type="number" inputmode="numeric" min="0" class="num-input" data-checked="${stage}" value="${st.checkedQty}" placeholder="0"></div>
@@ -206,7 +211,7 @@ function stageBlock(stage, defects) {
           <input type="number" inputmode="numeric" min="0" class="num-input" data-defectqty="${stage}" value="${st.defectQty}" placeholder="0"></div>
       </div>
       ${defects.length ? `
-      <div data-defects-box="${stage}" class="hidden">
+      <div style="margin-top:6px">
         ${defects.map((d) => `
           <div class="defect-row">
             <div class="name">${escapeHtml(d.name)}${d.category ? ` <span class="faint">· ${escapeHtml(d.category)}</span>` : ""}</div>
@@ -238,7 +243,6 @@ function updateCalc() {
     const passed = checked - rejected;
     const dhu = checked ? Math.round((totalDefects / checked) * 10000) / 100 : 0;
     const passPct = checked ? Math.round((passed / checked) * 10000) / 100 : 0;
-    const rejectPct = checked ? Math.round((rejected / checked) * 10000) / 100 : 0;
 
     box.innerHTML = `
       ${metric("Checked", checked)}
@@ -268,7 +272,7 @@ async function submitHour() {
             defects: { ...st.defects },
             workerId: profile.id, workerName: profile.name,
             taskId: task.id, taskCode: task.taskCode || task.id,
-            buyerId: task.buyerId, styleId: task.styleId,
+            buyerId: task.buyerId, styleId: task.styleId, lineId,
             shift: shiftInfo.shiftKey, shiftName: shiftInfo.shift.name,
             team: shiftInfo.currentTeamKey, teamName: shiftInfo.currentTeamName,
             stage: s
@@ -284,10 +288,10 @@ async function submitHour() {
                 text: `High DHU ${worstDhu}% on ${ref.lines[lineId]?.name || lineId} (Hour ${entryState.hour})`,
                 lineId, hour: entryState.hour });
         }
-        toast(existingHour ? "Hour updated ✓" : "Entry submitted ✓", "success");
-        document.getElementById("w-entry").innerHTML = "";
-        existingHour = null;
-        loadHistory();
+        toast("Entry submitted ✓", "success");
+        submittedHours.add(entryState.hour);
+        entryState.hour = null;
+        render(rootEl);
     } catch (e) {
         console.error(e);
         toast("Save failed: " + e.message, "error");
@@ -306,15 +310,11 @@ async function loadHistory() {
     host.innerHTML = `<div class="table-wrap"><table><thead><tr>
         <th>Hour</th><th>Stage</th><th>Checked</th><th>Defects</th><th>DHU%</th><th>Pass%</th></tr></thead><tbody>
         ${rows.map((r) => `<tr>
-          <td><a href="#" data-open-hour="${r.hour}">Hour ${r.hour}</a></td><td>${STAGES[r.stage] || r.stage}</td>
+          <td>Hour ${r.hour}</td><td>${STAGES[r.stage] || r.stage}</td>
           <td>${r.checkedQty}</td><td>${r.totalDefects}</td>
           <td><span class="badge ${dhuClass(r.dhu)}">${(r.dhu ?? 0).toFixed?.(2) ?? r.dhu}</span></td>
           <td>${(r.passPct ?? 0)}%</td></tr>`).join("")}
         </tbody></table></div>`;
-    host.querySelectorAll("[data-open-hour]").forEach((a) => a.onclick = (e) => {
-        e.preventDefault(); openHour(Number(a.dataset.openHour));
-        document.getElementById("w-entry").scrollIntoView({ behavior: "smooth" });
-    });
 }
 
 function toggleTheme() {

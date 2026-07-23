@@ -414,6 +414,10 @@ function renderReports(v) {
       <div class="grid-cards" style="margin-bottom:16px">
         <div class="card"><div class="card-title" style="margin-bottom:12px">DHU by Line</div><div class="chart-box"><canvas id="rc-line"></canvas></div></div>
         <div class="card"><div class="card-title" style="margin-bottom:12px">Top Defects</div><div class="chart-box"><canvas id="rc-def"></canvas></div></div>
+        <div class="card ${F.defectId ? "" : "hidden"}" id="rc-defect-card">
+          <div class="card-title" style="margin-bottom:12px" id="rc-defect-title">Defect by Line</div>
+          <div class="chart-box"><canvas id="rc-defect-line"></canvas></div>
+        </div>
       </div>
       <div class="card"><div class="card-head"><div class="card-title">Detailed Entries</div><span class="badge blue" id="r-count"></span></div>
         <div id="r-table"></div></div>`;
@@ -462,6 +466,7 @@ async function runReport() {
 
 function paintReport() {
     const rows = reportState.rows;
+    const F = reportState.filters;
     const a = aggregate(rows);
     document.getElementById("r-summary").innerHTML =
         stat("Checked", a.checked, "▤") + stat("Total Defects", a.defects, "⚠") +
@@ -472,6 +477,27 @@ function paintReport() {
     const defs = Object.entries(a.byDefect).map(([id, c]) => [nameOf("defects", id), c]).sort((x, y) => y[1] - x[1]).slice(0, 8);
     chart("rc-def", "bar", { labels: defs.map((d) => d[0]),
         datasets: [{ label: "Count", data: defs.map((d) => d[1]), backgroundColor: PALETTE[3], borderRadius: 5 }] }, { indexAxis: "y" });
+
+    const defectCard = document.getElementById("rc-defect-card");
+    if (defectCard) {
+        if (F.defectId) {
+            defectCard.classList.remove("hidden");
+            const defectName = nameOf("defects", F.defectId);
+            document.getElementById("rc-defect-title").textContent = `“${defectName}” — Occurrences by Line`;
+            const byLineCount = {};
+            rows.forEach((r) => {
+                const c = r.defects?.[F.defectId] || 0;
+                if (c > 0) byLineCount[r.lineId] = (byLineCount[r.lineId] || 0) + c;
+            });
+            const lineRows = Object.entries(byLineCount).sort((x, y) => y[1] - x[1]);
+            chart("rc-defect-line", "bar", {
+                labels: lineRows.map(([id]) => nameOf("productionLines", id)),
+                datasets: [{ label: "Occurrences", data: lineRows.map(([, c]) => c), backgroundColor: PALETTE[4], borderRadius: 5 }]
+            }, { indexAxis: "y" });
+        } else {
+            defectCard.classList.add("hidden");
+        }
+    }
 
     const tbl = document.getElementById("r-table");
     if (!rows.length) { tbl.innerHTML = `<div class="empty">No entries match the current filters.</div>`; return; }

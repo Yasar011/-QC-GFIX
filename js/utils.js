@@ -58,14 +58,6 @@ export function todayKey(d = new Date()) {
     return `${y}-${m}-${day}`;
 }
 
-export function currentHourIndex(shift, now = new Date()) {
-    // Returns 1..N based on hours elapsed since the shift start.
-    if (!shift || !shift.start) return 1;
-    const [sh, sm] = shift.start.split(":").map(Number);
-    const start = new Date(now); start.setHours(sh, sm, 0, 0);
-    const diffH = Math.floor((now - start) / 3600000) + 1;
-    return Math.min(Math.max(diffH, 1), DEFAULT_HOURS + 4);
-}
 
 export function fmtDateTime(ts) {
     if (!ts) return "—";
