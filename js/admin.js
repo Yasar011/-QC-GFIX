@@ -9,7 +9,7 @@ import {
     setUser, getDayEntries, flattenDay, audit
 } from "./db.js";
 import {
-    STAGES, calcMetrics, todayKey, escapeHtml, dhuClass, fmtDateTime,
+    STAGES, calcMetrics, todayKey, escapeHtml, dhuClass, fmtDateTime, timeAgo,
     toast, confirmDialog, setLoading, downloadFile, toCSV, round2
 } from "./utils.js";
 import { render as chart, PALETTE } from "./charts.js";
@@ -61,8 +61,8 @@ const COLLECTIONS = {
     },
     tasks: {
         title: "Tasks", singular: "Task",
-        cols: [["taskCode", "Task ID"], ["buyerId", "Buyer", "buyers"], ["styleId", "Style", "styles"],
-               ["lineId", "Line", "productionLines"], ["active", "Status"]],
+        // Tasks use the dedicated list-row view (renderTasks) instead of the
+        // generic table, so no `cols` here — `fields` still drives the form.
         fields: [
             { k: "taskCode", label: "Task ID", req: true },
             { k: "buyerId", label: "Buyer", type: "ref", ref: "buyers" },
@@ -193,6 +193,7 @@ function go(id) {
     else if (id === "rotation") renderRotation(v);
     else if (id === "logs") renderLogs(v);
     else if (id === "settings") renderSettings(v);
+    else if (id === "tasks") renderTasks(v);
     else if (COLLECTIONS[id]) renderCollection(v, id);
 }
 
@@ -773,6 +774,81 @@ async function delRecord(key, id) {
     store[key] = await readOnce(key) || {};
     go(key);
     toast(cfg.singular + " deleted", "success");
+}
+
+// =====================================================================
+// TASKS — deployment-list-style view (status dot, tags, time, filters)
+// =====================================================================
+const taskFilter = { q: "", buyerId: "", lineId: "", status: "" };
+
+function renderTasks(v) {
+    const buyerOpts = list("buyers").map((b) => `<option value="${b.id}" ${taskFilter.buyerId === b.id ? "selected" : ""}>${escapeHtml(b.name)}</option>`).join("");
+    const lineOpts = list("productionLines").map((l) => `<option value="${l.id}" ${taskFilter.lineId === l.id ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("");
+
+    v.innerHTML = `
+      <div class="filterbar row wrap" style="gap:10px">
+        <input type="text" id="t-q" placeholder="Search task ID…" value="${escapeHtml(taskFilter.q)}" style="width:200px">
+        <select id="t-buyer" style="width:auto"><option value="">All Buyers</option>${buyerOpts}</select>
+        <select id="t-line" style="width:auto"><option value="">All Lines</option>${lineOpts}</select>
+        <select id="t-status" style="width:auto">
+          <option value="">All Status</option>
+          <option value="active" ${taskFilter.status === "active" ? "selected" : ""}>Active</option>
+          <option value="inactive" ${taskFilter.status === "inactive" ? "selected" : ""}>Inactive</option>
+        </select>
+        <span class="right"></span>
+        <button class="btn btn-primary" id="t-add">＋ Add Task</button>
+      </div>
+      <div class="card" style="padding:0" id="t-list"></div>`;
+
+    v.querySelector("#t-q").oninput = (e) => { taskFilter.q = e.target.value; paintTasks(); };
+    v.querySelector("#t-buyer").onchange = (e) => { taskFilter.buyerId = e.target.value; paintTasks(); };
+    v.querySelector("#t-line").onchange = (e) => { taskFilter.lineId = e.target.value; paintTasks(); };
+    v.querySelector("#t-status").onchange = (e) => { taskFilter.status = e.target.value; paintTasks(); };
+    v.querySelector("#t-add").onclick = () => openForm("tasks");
+    paintTasks();
+}
+
+function paintTasks() {
+    const host = document.getElementById("t-list");
+    if (!host) return;
+    const q = taskFilter.q.trim().toLowerCase();
+    let rows = list("tasks").filter((t) => {
+        if (q && !String(t.taskCode || t.id).toLowerCase().includes(q)) return false;
+        if (taskFilter.buyerId && t.buyerId !== taskFilter.buyerId) return false;
+        if (taskFilter.lineId && t.lineId !== taskFilter.lineId) return false;
+        if (taskFilter.status === "active" && t.active === false) return false;
+        if (taskFilter.status === "inactive" && t.active !== false) return false;
+        return true;
+    }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    if (!rows.length) {
+        host.innerHTML = `<div class="empty">No tasks match the current filters.</div>`;
+        return;
+    }
+
+    host.innerHTML = `<div class="list-rows">${rows.map((t) => {
+        const active = t.active !== false;
+        const stages = (t.stages || []).map((s) => `<span class="badge">${STAGES[s] || s}</span>`).join("");
+        return `
+        <div class="list-row">
+          <div class="lr-status ${active ? "on" : "off"}"><span class="dot ${active ? "on" : "off"}"></span>${active ? "Active" : "Inactive"}</div>
+          <div class="lr-main">
+            <div class="lr-title">${escapeHtml(t.taskCode || t.id)}</div>
+            <div class="lr-sub">${escapeHtml(nameOf("buyers", t.buyerId))} · ${escapeHtml(nameOf("styles", t.styleId))} · ${escapeHtml(nameOf("productionLines", t.lineId))}</div>
+          </div>
+          <div class="lr-tags">${stages || `<span class="faint" style="font-size:12px">No stages</span>`}</div>
+          <div class="lr-time">${timeAgo(t.updatedAt || t.createdAt)}</div>
+          <div class="lr-actions">
+            <button class="iconbtn" data-edit-task="${t.id}" title="Edit Task">✎ Edit</button>
+            <button class="iconbtn text-bad" data-del-task="${t.id}" title="Delete Task">🗑</button>
+          </div>
+        </div>`;
+    }).join("")}</div>`;
+
+    host.querySelectorAll("[data-edit-task]").forEach((b) =>
+        b.onclick = () => openForm("tasks", store.tasks[b.dataset.editTask], b.dataset.editTask));
+    host.querySelectorAll("[data-del-task]").forEach((b) =>
+        b.onclick = () => delRecord("tasks", b.dataset.delTask));
 }
 
 // =====================================================================
