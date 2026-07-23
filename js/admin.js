@@ -687,8 +687,8 @@ function renderCollection(v, key) {
           ${rows.length ? rows.map((r) => `<tr>
             ${cfg.cols.map((c) => `<td>${cellVal(r, c)}</td>`).join("")}
             <td style="text-align:right;white-space:nowrap">
-              <button class="iconbtn" data-edit="${r.id}">✎</button>
-              <button class="iconbtn text-bad" data-del="${r.id}">🗑</button></td></tr>`).join("")
+              <button class="iconbtn" data-edit="${r.id}" title="Edit ${cfg.singular}" aria-label="Edit">✎ Edit</button>
+              <button class="iconbtn text-bad" data-del="${r.id}" title="Delete ${cfg.singular}" aria-label="Delete">🗑 Delete</button></td></tr>`).join("")
           : `<tr><td colspan="${cfg.cols.length + 1}"><div class="empty">No ${cfg.title.toLowerCase()} yet.</div></td></tr>`}
         </tbody></table></div>
       </div>`;
@@ -793,7 +793,7 @@ function renderUsers(v) {
           <td>${escapeHtml(nameOf("productionLines", u.assignedLine))}</td>
           <td>${escapeHtml(u.assignedTeam || "—")}</td>
           <td>${u.active === false ? `<span class="badge">Disabled</span>` : `<span class="badge good">Active</span>`}</td>
-          <td style="text-align:right"><button class="iconbtn" data-eu="${u.id}">✎</button></td></tr>`).join("")}
+          <td style="text-align:right"><button class="iconbtn" data-eu="${u.id}" title="Edit User" aria-label="Edit">✎ Edit</button></td></tr>`).join("")}
       </tbody></table></div></div>`;
     v.querySelector("#u-add").onclick = () => userForm();
     v.querySelectorAll("[data-eu]").forEach((b) => b.onclick = () => userForm(store.users[b.dataset.eu], b.dataset.eu));
