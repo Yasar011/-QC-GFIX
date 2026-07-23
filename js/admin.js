@@ -241,6 +241,7 @@ const dhuOf = (m) => m.checked ? round2(m.defects / m.checked * 100) : 0;
 const passPctOf = (m) => m.checked ? round2(m.passed / m.checked * 100) : 0;
 
 let dashLineId = "";
+let dashStageDrill = "";   // stage key currently drilled into, from clicking the "DHU by Stage" chart
 
 function renderDashboard(v) {
     const entries = dashLineId ? todayEntries.filter((e) => e.lineId === dashLineId) : todayEntries;
@@ -277,12 +278,18 @@ function renderDashboard(v) {
 
       <div class="grid-cards" style="margin-bottom:16px">
         <div class="card"><div class="card-head"><div class="card-title">DHU Trend by Hour</div></div><div class="chart-box"><canvas id="c-hour"></canvas></div></div>
-        <div class="card"><div class="card-head"><div class="card-title">DHU by Stage</div></div><div class="chart-box"><canvas id="c-stage"></canvas></div></div>
+        <div class="card"><div class="card-head"><div class="card-title">DHU by Stage</div><span class="faint" style="font-size:11px">Click a bar for line breakdown</span></div><div class="chart-box"><canvas id="c-stage"></canvas></div></div>
         <div class="card"><div class="card-head"><div class="card-title">Pass vs Reject</div></div><div class="chart-box"><canvas id="c-pr"></canvas></div></div>
         <div class="card"><div class="card-head"><div class="card-title">Top Defects</div></div><div class="chart-box"><canvas id="c-def"></canvas></div></div>
         ${dashLineId ? "" : `<div class="card"><div class="card-head"><div class="card-title">Line Performance (DHU%)</div></div><div class="chart-box"><canvas id="c-line"></canvas></div></div>`}
         <div class="card"><div class="card-head"><div class="card-title">Team Performance</div></div><div class="chart-box"><canvas id="c-team"></canvas></div></div>
         <div class="card"><div class="card-head"><div class="card-title">Shift Performance</div></div><div class="chart-box"><canvas id="c-shift"></canvas></div></div>
+      </div>
+
+      <div class="card ${dashStageDrill ? "" : "hidden"}" id="d-stage-drill" style="margin-bottom:16px;padding:0">
+        <div class="card-head" style="padding:20px 20px 0"><div class="card-title" id="d-stage-drill-title">Stage Drill-down</div>
+          <button class="iconbtn" id="d-stage-drill-close">✕ Close</button></div>
+        <div id="d-stage-drill-body" style="padding:0 0 4px"></div>
       </div>
 
       <div class="card">
@@ -292,6 +299,7 @@ function renderDashboard(v) {
       </div>`;
 
     drawDashCharts(a);
+    renderStageDrill();
     const recent = [...entries].sort((x, y) => (y.savedAt || 0) - (x.savedAt || 0)).slice(0, 10);
     document.getElementById("d-recent").innerHTML = recent.length ? `
       <div class="table-wrap"><table><thead><tr>
@@ -305,7 +313,35 @@ function renderDashboard(v) {
 
     v.querySelector("#d-line").onchange = (e) => { dashLineId = e.target.value; renderDashboard(v); };
     v.querySelector("#d-pdf").onclick = exportDashboardPDF;
+    v.querySelector("#d-stage-drill-close").onclick = () => { dashStageDrill = ""; renderDashboard(v); };
     updateShiftBadge();
+}
+
+/** Renders the "<Stage> — DHU by Line" table when a stage bar has been clicked. */
+function renderStageDrill() {
+    const card = document.getElementById("d-stage-drill");
+    const body = document.getElementById("d-stage-drill-body");
+    if (!card || !body) return;
+    if (!dashStageDrill) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden");
+    document.getElementById("d-stage-drill-title").textContent = `${STAGES[dashStageDrill] || dashStageDrill} — DHU by Line`;
+
+    const byLine = {};
+    todayEntries.filter((e) => e.stage === dashStageDrill).forEach((e) => {
+        const m = byLine[e.lineId] || (byLine[e.lineId] = { checked: 0, defects: 0, rejected: 0, passed: 0 });
+        m.checked += +e.checkedQty || 0; m.defects += +e.totalDefects || 0;
+        m.rejected += +e.rejectedQty || 0; m.passed += +e.passedQty || 0;
+    });
+    const rows = Object.entries(byLine).sort((x, y) => dhuOf(y[1]) - dhuOf(x[1]));
+    body.innerHTML = rows.length ? `<div class="table-wrap"><table><thead><tr>
+        <th>Line</th><th>Checked</th><th>Total Defects</th><th>Passed</th><th>Rejected</th><th>DHU%</th><th>Pass%</th></tr></thead><tbody>
+        ${rows.map(([lineId, m]) => `<tr>
+          <td style="font-weight:700">${escapeHtml(nameOf("productionLines", lineId))}</td>
+          <td>${m.checked}</td><td>${m.defects}</td>
+          <td class="text-good">${m.passed}</td><td class="text-bad">${m.rejected}</td>
+          <td><span class="badge ${dhuClass(dhuOf(m))}">${dhuOf(m).toFixed(2)}</span></td>
+          <td>${passPctOf(m).toFixed(2)}</td></tr>`).join("")}
+      </tbody></table></div>` : `<div class="empty">No entries for this stage today.</div>`;
 }
 
 function stageTable(a) {
@@ -356,7 +392,27 @@ function drawDashCharts(a) {
     barByGroup("c-line", a.byLine, (id) => nameOf("productionLines", id), PALETTE[0]);
     barByGroup("c-team", a.byTeam, (k) => k, PALETTE[2]);
     barByGroup("c-shift", a.byShift, (k) => k, PALETTE[5]);
-    barByGroup("c-stage", a.byStage, (k) => STAGES[k] || k, PALETTE[6]);
+    drawStageChart(a);
+}
+
+/** DHU by Stage — clicking a bar drills into that stage's DHU by line. */
+function drawStageChart(a) {
+    const rows = Object.entries(STAGES).filter(([k]) => a.byStage[k]);
+    const stageKeys = rows.map(([k]) => k);
+    chart("c-stage", "bar", {
+        labels: rows.map(([, label]) => label),
+        datasets: [{ label: "DHU %", data: rows.map(([k]) => dhuOf(a.byStage[k])), backgroundColor: PALETTE[6], borderRadius: 5 }]
+    }, {
+        onClick: (evt, elements) => {
+            if (!elements.length) return;
+            const key = stageKeys[elements[0].index];
+            if (!key) return;
+            dashStageDrill = dashStageDrill === key ? "" : key;
+            renderStageDrill();
+            if (dashStageDrill) document.getElementById("d-stage-drill")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        },
+        onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? "pointer" : "default"; }
+    });
 }
 function barByGroup(id, map, label, color) {
     const rows = Object.entries(map).filter(([k]) => k && k !== "undefined");
